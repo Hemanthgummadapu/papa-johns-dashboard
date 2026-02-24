@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Backgrounds */
+  --bg-base: #0a0b0f;
+  --bg-surface: #111318;
+  --bg-elevated: #16181f;
+  --bg-overlay: #1c1f28;
+  
+  /* Borders */
+  --border-subtle: #1f2230;
+  --border-default: #252838;
+  --border-strong: #2e3347;
+
+  /* Text */
+  --text-primary: #f1f3f9;
+  --text-secondary: #8b90a7;
+  --text-tertiary: #555b73;
+  --text-disabled: #363a4d;
+
+  /* Brand */
+  --brand: #e8410a;
+  --brand-hover: #ff5520;
+  --brand-subtle: rgba(232, 65, 10, 0.1);
+
+  /* Semantic - Success */
+  --success: #22c55e;
+  --success-subtle: rgba(34, 197, 94, 0.08);
+  --success-text: #4ade80;
+
+  /* Semantic - Danger */
+  --danger: #ef4444;
+  --danger-subtle: rgba(239, 68, 68, 0.08);
+  --danger-text: #f87171;
+
+  /* Semantic - Warning */
+  --warning: #f59e0b;
+  --warning-subtle: rgba(245, 158, 11, 0.08);
+  --warning-text: #fbbf24;
+
+  /* Semantic - Info */
+  --info: #3b82f6;
+  --info-subtle: rgba(59, 130, 246, 0.08);
+  --info-text: #60a5fa;
+
+  /* Store colors - refined palette */
+  --store-1: #e8410a;
+  --store-2: #3b82f6;
+  --store-3: #22c55e;
+  --store-4: #f59e0b;
+  --store-5: #8b5cf6;
+  --store-6: #06b6d4;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  color: var(--text-primary);
+  background: var(--bg-base);
+  min-height: 100vh;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.upload-zone {
+  border: 2px dashed var(--border-default);
+  border-radius: 12px;
+  transition: all 0.2s;
+}
+
+.upload-zone:hover,
+.upload-zone.drag {
+  border-color: var(--brand);
+  background: var(--brand-subtle);
+}
+
+.tab-btn {
+  transition: all 0.2s;
+}
+
+.tab-btn.active {
+  background: var(--brand);
+  color: #fff;
+}
+
+.store-chip {
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.metric-chip {
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
