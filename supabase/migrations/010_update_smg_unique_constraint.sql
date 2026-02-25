@@ -6,3 +6,4 @@ ALTER TABLE smg_scores DROP CONSTRAINT IF EXISTS smg_scores_store_number_date_ke
 ALTER TABLE smg_scores ADD CONSTRAINT smg_scores_store_number_date_period_key UNIQUE(store_number, date, period);
 
 
+

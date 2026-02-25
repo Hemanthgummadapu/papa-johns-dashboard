@@ -78,3 +78,4 @@ Returns:
 - `current_period.complete`: true if all 6 stores saved
 - `current_period.hours_since_scrape`: hours since last current period scrape
 
+

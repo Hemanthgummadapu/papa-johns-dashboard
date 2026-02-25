@@ -21,3 +21,4 @@ CREATE INDEX IF NOT EXISTS idx_smg_scores_store_number ON smg_scores(store_numbe
 CREATE INDEX IF NOT EXISTS idx_smg_scores_date ON smg_scores(date DESC);
 
 
+
