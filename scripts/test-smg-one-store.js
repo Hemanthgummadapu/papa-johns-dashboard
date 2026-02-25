@@ -473,50 +473,42 @@ async function saveToDatabase(supabase, storeId, scrapedData) {
           const num = parseFloat(cleaned);
           return isNaN(num) ? null : num;
         }
-
         function parseNum(v) {
           if (!v) return null;
           const num = parseInt(v.replace(/,/g, '').trim());
           return isNaN(num) ? null : num;
         }
 
-        // ── SECTION 1: Where should I focus? ─────────────────────────────
         const focus = {};
+        const doing = {};
+        const ranking = { store: null, papa_johns: null };
+
         const allTables = Array.from(document.querySelectorAll('table'));
-        
+
+        // ── SECTION 1: focus ─────────────────────────────────────────────
         allTables.forEach(table => {
-          const headerRow = table.querySelector('tr');
-          if (!headerRow) return;
-          const headers = Array.from(headerRow.querySelectorAll('th, td')).map(h => h.innerText.trim());
-          const hasCurrentCol = headers.some(h => h === 'Current');
-          const hasPreviousCol = headers.some(h => h.includes('Previous'));
-          if (!hasCurrentCol || !hasPreviousCol) return;
-
-          // Find the heading above this table
-          let heading = '';
-          let el = table.previousElementSibling;
-          while (el) {
-            const text = el.innerText?.trim() || '';
-            if (text.length > 0) { heading = text; break; }
-            el = el.previousElementSibling;
-          }
-
-          // Find the store row
-          Array.from(table.querySelectorAll('tr')).forEach(row => {
-            const cells = Array.from(row.querySelectorAll('td')).map(td => td.innerText.trim());
-            if (cells[0] !== storeId) return;
-            if (heading.includes('Accuracy')) {
-              focus.accuracy_current = parsePct(cells[1]);
-              focus.accuracy_vs_previous = parsePct(cells[2]);
-            } else if (heading.includes('Wait')) {
-              focus.wait_time_current = parsePct(cells[1]);
-              focus.wait_time_vs_previous = parsePct(cells[2]);
+          const rows = Array.from(table.querySelectorAll('tr'));
+          rows.forEach((row, i) => {
+            const cells = Array.from(row.querySelectorAll('th, td')).map(c => c.innerText.trim());
+            // Header row has metric name + Current + Vs. Previous
+            if (cells.length >= 3 && cells[1] === 'Current' && cells[2].includes('Previous')) {
+              const metric = cells[0]; // "Accuracy of Order" or "Wait Time"
+              const dataRow = rows[i + 1];
+              if (!dataRow) return;
+              const dataCells = Array.from(dataRow.querySelectorAll('td')).map(c => c.innerText.trim());
+              if (dataCells[0] !== storeId) return;
+              if (metric.includes('Accuracy')) {
+                focus.accuracy_current = parsePct(dataCells[1]);
+                focus.accuracy_vs_previous = parsePct(dataCells[2]);
+              } else if (metric.includes('Wait')) {
+                focus.wait_time_current = parsePct(dataCells[1]);
+                focus.wait_time_vs_previous = parsePct(dataCells[2]);
+              }
             }
           });
         });
 
-        // ── SECTION 2: How are we doing? ─────────────────────────────────
-        const doing = {};
+        // ── SECTION 2: doing ─────────────────────────────────────────────
         const metricMap = {
           'Overall Satisfaction': 'osat',
           'Accuracy of Order': 'accuracy',
@@ -524,9 +516,8 @@ async function saveToDatabase(supabase, storeId, scrapedData) {
           'Comp Orders': 'comp_orders',
           'Comp Sales': 'comp_sales'
         };
-
         Array.from(document.querySelectorAll('tr')).forEach(row => {
-          const cells = Array.from(row.querySelectorAll('td')).map(td => td.innerText.trim());
+          const cells = Array.from(row.querySelectorAll('td')).map(c => c.innerText.trim());
           if (cells.length < 2) return;
           const key = metricMap[cells[0]];
           if (!key) return;
@@ -538,47 +529,36 @@ async function saveToDatabase(supabase, storeId, scrapedData) {
           };
         });
 
-        // ── SECTION 3: Ranking ────────────────────────────────────────────
-        const ranking = { store: null, papa_johns: null };
-
-        allTables.forEach(table => {
-          const headerRow = table.querySelector('tr');
-          if (!headerRow) return;
-          const headers = Array.from(headerRow.querySelectorAll('th, td')).map(h => h.innerText.trim());
-          if (!headers.some(h => h.includes('OSAT'))) return;
-
-          const parseRankRow = (row) => {
-            if (!row) return null;
-            const cells = Array.from(row.querySelectorAll('td')).map(td => td.innerText.trim());
-            return {
-              responses: parseNum(cells[1]),
-              osat: parsePct(cells[2]),
-              taste_of_food: parsePct(cells[3]),
-              accuracy_of_order: parsePct(cells[4]),
-              wait_time: parsePct(cells[5]),
-              friendliness_of_delivery_driver: parsePct(cells[6])
-            };
+        // ── SECTION 3: ranking ───────────────────────────────────────────
+        const parseRankRow = (row) => {
+          if (!row) return null;
+          const cells = Array.from(row.querySelectorAll('td')).map(c => c.innerText.trim());
+          return {
+            responses: parseNum(cells[1]),
+            osat: parsePct(cells[2]),
+            taste_of_food: parsePct(cells[3]),
+            accuracy_of_order: parsePct(cells[4]),
+            wait_time: parsePct(cells[5]),
+            friendliness_of_delivery_driver: parsePct(cells[6])
           };
+        };
 
-          const rows = Array.from(table.querySelectorAll('tr'));
-          const storeRow = rows.find(r => {
-            const first = r.querySelector('td')?.innerText.trim();
-            return first === storeId;
-          });
-          const pjRow = rows.find(r => {
-            const first = r.querySelector('td')?.innerText.trim();
-            return first === "Papa John's";
-          });
-
-          if (storeRow || pjRow) {
-            ranking.store = parseRankRow(storeRow);
-            ranking.papa_johns = parseRankRow(pjRow);
-          }
+        // Papa John's and F-W rows use fixedScrollingCell
+        Array.from(document.querySelectorAll('tr')).filter(row =>
+          row.querySelector('td.fixedScrollingCell')
+        ).forEach(row => {
+          const label = row.querySelector('td.fixedScrollingCell.label')?.innerText.trim();
+          if (label === "Papa John's") ranking.papa_johns = parseRankRow(row);
         });
 
-        return { focus, doing, ranking };
+        // Store row uses canSort class
+        const storeRankRow = Array.from(document.querySelectorAll('tr.canSort')).find(row =>
+          row.querySelector('td.label')?.innerText.trim() === storeId
+        );
+        if (storeRankRow) ranking.store = parseRankRow(storeRankRow);
 
-      }, storeId); // pass storeId with leading zeros e.g. "002021"
+        return { focus, doing, ranking };
+      }, storeId);
 
       allData[storeId] = data;
       console.log(`✅ Scraped ${storeId}:`, JSON.stringify(data, null, 2));
