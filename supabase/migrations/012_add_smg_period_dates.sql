@@ -18,3 +18,4 @@ CREATE INDEX IF NOT EXISTS idx_smg_scores_period_start_date ON smg_scores(period
 CREATE INDEX IF NOT EXISTS idx_smg_scores_period ON smg_scores(period);
 
 
+

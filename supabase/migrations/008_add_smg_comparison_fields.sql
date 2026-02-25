@@ -17,3 +17,4 @@ ALTER TABLE smg_scores ADD COLUMN IF NOT EXISTS driver_vs_papa_johns text;
 ALTER TABLE smg_scores ADD COLUMN IF NOT EXISTS focus_alerts text;
 
 
+
