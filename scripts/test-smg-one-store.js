@@ -1,13 +1,420 @@
 import { chromium } from 'playwright';
 import { readFileSync } from 'fs';
+import { createClient } from '@supabase/supabase-js';
+
+const STORE_NUMBERS = ['002021', '002081', '002259', '002292', '002481', '003011'];
+
+// Initialize Supabase client if env vars are available
+function getSupabaseClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) {
+    console.warn('⚠️  Supabase env vars not found - data will not be saved to DB');
+    return null;
+  }
+  return createClient(url, serviceKey);
+}
+
+// Check if page is already on Current Period
+async function isCurrentPeriod(page) {
+  const result = await page.evaluate(() => {
+    // Check if "Current Period" is selected in the dropdown
+    const select = document.querySelector('#rbDateRangeSEL');
+    if (select) {
+      const selectedOption = select.options[select.selectedIndex];
+      if (selectedOption && selectedOption.text.toLowerCase().trim().includes('current period')) {
+        return true;
+      }
+    }
+    // Fallback: check page text for current period indicators
+    const bodyText = document.body.innerText.toLowerCase();
+    // Look for "Current Period" text or date ranges that suggest current period
+    if (bodyText.includes('current period')) {
+      return true;
+    }
+    return false;
+  });
+  return result;
+}
+
+// Ensure Current Period is selected using defensive/optional logic
+async function ensureCurrentPeriod(page) {
+  // Check current period shown on page first
+  const currentPeriodText = await page.evaluate(() => {
+    const el = document.querySelector('.dateRange, .date-range, [class*="date"]');
+    return el?.innerText?.trim() || document.body.innerText.match(/\d+\/\d+\/\d+ - \d+\/\d+\/\d+/)?.[0] || '';
+  });
+  console.log('Current period on page:', currentPeriodText);
+
+  // Only open Change Dates modal if needed
+  const needsDateChange = await page.$('text=Change Dates').catch(() => null);
+  if (needsDateChange) {
+    await page.evaluate(() => {
+      const el = Array.from(document.querySelectorAll('*'))
+        .find(e => e.childElementCount === 0 && e.innerText?.trim() === 'Change Dates');
+      if (el) el.click();
+    });
+    console.log('✅ Clicked Change Dates');
+
+    await page.waitForSelector('text=Timeframe', { timeout: 10000 });
+    await page.waitForTimeout(1500);
+
+    // Check if already on Current Period
+    const currentVal = await page.$eval('#rbDateRangeSEL', el => el.options[el.selectedIndex].text).catch(() => '');
+    console.log('Dropdown currently set to:', currentVal);
+
+    if (!currentVal.includes('Current Period')) {
+      await page.evaluate(() => {
+        const sel = document.querySelector('#rbDateRangeSEL');
+        const opt = Array.from(sel.options).find(o => o.text === 'Current Period');
+        if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+      });
+      console.log('✅ Set to Current Period');
+      await page.waitForTimeout(500);
+
+      // Click Build Report using mouse coordinates
+      const btn = await page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll('.podButton'))
+          .find(el => el.textContent.trim() === 'Build Report');
+        if (!b) return null;
+        const rect = b.getBoundingClientRect();
+        return { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+      });
+
+      if (!btn) throw new Error('Build Report podButton not found');
+
+      await page.mouse.move(btn.x, btn.y);
+      await page.mouse.down();
+      await page.waitForTimeout(100);
+      await page.mouse.up();
+      console.log('✅ Clicked Build Report');
+      await page.waitForTimeout(4000);
+    } else {
+      // Already on current period, just close modal
+      await page.keyboard.press('Escape');
+      console.log('✅ Already on Current Period, skipped Build Report');
+    }
+  } else {
+    console.log('✅ Change Dates button not found - likely already on Current Period');
+  }
+
+  // Wait for data to reload
+  await page.waitForFunction(() => {
+    return (
+      (window.jQuery && window.jQuery.active === 0) &&
+      document.querySelector('.unitSelectionDD')
+    );
+  }, { timeout: 15000 }).catch(() => {
+    // If wait fails, just continue
+    console.log('Waiting for data reload...');
+  });
+  
+  console.log('✅ Period setup complete');
+}
+
+// Switch to a specific store
+async function switchStore(page, storeId) {
+  console.log(`Switching to store ${storeId}...`);
+  
+  await page.evaluate((storeId) => {
+    const select = document.querySelector('.unitSelectionDD');
+    if (!select) throw new Error('Store selector not found');
+    const option = Array.from(select.options).find(o => o.text.trim() === storeId);
+    if (!option) throw new Error(`Store ${storeId} not found`);
+    select.value = option.value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    
+    // Trigger chosen.js update if available
+    if (window.jQuery) {
+      window.jQuery(select).trigger('chosen:updated');
+    }
+  }, storeId);
+
+  // Wait for store number to appear in body text (mandatory)
+  await page.waitForFunction((storeId) =>
+    document.body.innerText.includes(storeId),
+    storeId,
+    { timeout: 15000 }
+  );
+  console.log(`✅ Store ${storeId} visible in body text`);
+  
+  // Mandatory 30 second hard wait after store switch
+  console.log('Waiting 30 seconds for all widgets and comparisons to load...');
+  await page.waitForTimeout(30000);
+  console.log(`✅ Store ${storeId} fully loaded`);
+}
+
+// Parse a value, treating 0.0%*, N/A, ** as null
+function parseValue(value) {
+  if (!value || value === 'N/A' || value === '**' || value === '0.0%*' || value === '0.0%') {
+    return null;
+  }
+  // Remove * and % and parse
+  const cleaned = String(value).replace(/[*%]/g, '').trim();
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? null : parsed;
+}
+
+// Scrape data from the current page
+async function scrapeStoreData(page, storeId) {
+  const storeNum = storeId.replace(/^0+/, '');
+  
+  // Scrape only the Ranking table - widgets lie/lag, table is truth
+  const tableData = await page.evaluate((storeId) => {
+    const cleanPct = (v) => {
+      if (!v || v === '**' || v === 'N/A') return null;
+      const parsed = parseFloat(v.replace('%','').replace('*',''));
+      return isNaN(parsed) ? null : parsed;
+    };
+
+    const rows = Array.from(document.querySelectorAll('table tr'));
+
+    const getRow = (label) =>
+      rows.find(r => r.children[0]?.innerText.trim() === label);
+
+    const parse = (row) => {
+      if (!row) return null;
+      const c = Array.from(row.children).map(td => td.innerText.trim());
+      const respVal = parseInt(c[1]);
+      return {
+        responses: isNaN(respVal) ? null : respVal,
+        osat: cleanPct(c[2]),
+        accuracy_of_order: cleanPct(c[4]),
+        wait_time: cleanPct(c[5]),
+      };
+    };
+
+    return {
+      store: parse(getRow(storeId)),
+      papa_johns: parse(getRow("Papa John's"))
+    };
+  }, storeId);
+
+  // If store row not found with full ID, try without leading zeros
+  if (!tableData.store) {
+    const tableDataAlt = await page.evaluate((storeNum) => {
+      const cleanPct = (v) => {
+        if (!v || v === '**' || v === 'N/A') return null;
+        return parseFloat(v.replace('%','').replace('*',''));
+      };
+
+      const rows = Array.from(document.querySelectorAll('table tr'));
+
+      const getRow = (label) =>
+        rows.find(r => r.children[0]?.innerText.trim() === label);
+
+      const parse = (row) => {
+        if (!row) return null;
+        const c = Array.from(row.children).map(td => td.innerText.trim());
+        return {
+          responses: parseInt(c[1]) || null,
+          osat: cleanPct(c[2]),
+          accuracy_of_order: cleanPct(c[4]),
+          wait_time: cleanPct(c[5]),
+        };
+      };
+
+      return {
+        store: parse(getRow(storeNum)),
+        papa_johns: parse(getRow("Papa John's"))
+      };
+    }, storeNum);
+    
+    if (tableDataAlt.store) {
+      tableData.store = tableDataAlt.store;
+    }
+    if (tableDataAlt.papa_johns) {
+      tableData.papa_johns = tableDataAlt.papa_johns;
+    }
+  }
+
+  // Extract period dates and comparison data
+  const data = await page.evaluate(() => {
+    const result = {
+      period_start_date: null,
+      period_end_date: null,
+      osat_vs_last_period: null,
+      accuracy_vs_last_period: null,
+      wait_time_vs_last_period: null,
+      osat_vs_papa_johns: null,
+      accuracy_vs_papa_johns: null,
+      wait_time_vs_papa_johns: null,
+    };
+
+    // Extract period dates from page
+    const dateRangeMatch = document.body.innerText.match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*[-–]\s*(\d{1,2}\/\d{1,2}\/\d{4})/);
+    if (dateRangeMatch) {
+      // Parse M/D/YYYY to YYYY-MM-DD
+      const parseDate = (dateStr) => {
+        const [month, day, year] = dateStr.split('/');
+        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      };
+      result.period_start_date = parseDate(dateRangeMatch[1]);
+      result.period_end_date = parseDate(dateRangeMatch[2]);
+    }
+
+    // Extract "How are we doing?" table - OSAT, Accuracy, Wait Time comparisons
+    const parseComparisonRow = (searchTerms) => {
+      const allRows = Array.from(document.querySelectorAll('tr, div[class*="row"], div[class*="Row"]'));
+      
+      for (const row of allRows) {
+        const rowText = (row.textContent || '').toLowerCase();
+        const matches = searchTerms.some(term => rowText.includes(term.toLowerCase()));
+        
+        if (matches) {
+          const cells = Array.from(row.querySelectorAll('td, th, div[class*="cell"], div[class*="column"], span[class*="value"]'));
+          const values = [];
+          
+          for (const cell of cells) {
+            const cellText = (cell.textContent || '').trim();
+            const style = window.getComputedStyle(cell);
+            
+            // Check for percentage score
+            const pctMatch = cellText.match(/([\d.]+)%/);
+            if (pctMatch) {
+              values.push({ type: 'score', value: pctMatch[1] });
+              continue;
+            }
+            
+            // Check for delta number (not a percentage)
+            const numMatch = cellText.match(/([+-]?[\d.]+)/);
+            if (numMatch && !cellText.includes('%')) {
+              const num = numMatch[1];
+              let isPositive = false;
+              
+              if (cellText.includes('↑') || cellText.includes('▲') || cellText.startsWith('+')) {
+                isPositive = true;
+              } else if (cellText.includes('↓') || cellText.includes('▼') || cellText.startsWith('-')) {
+                isPositive = false;
+              } else {
+                const color = style.color;
+                const rgb = color.match(/\d+/g);
+                if (rgb && rgb.length >= 3) {
+                  const g = parseInt(rgb[1]);
+                  const r = parseInt(rgb[0]);
+                  isPositive = g > 100 && g > r;
+                }
+              }
+              
+              values.push({ type: 'delta', value: num, isPositive });
+            }
+          }
+          
+          const deltas = values.filter(v => v.type === 'delta');
+          
+          if (deltas.length >= 2) {
+            return {
+              vsLastPeriod: (deltas[0].isPositive ? '+' : '-') + deltas[0].value,
+              vsPapaJohns: (deltas[1].isPositive ? '+' : '-') + deltas[1].value
+            };
+          }
+        }
+      }
+      return null;
+    };
+
+    // Parse OSAT from "How are we doing?" table
+    const osatComp = parseComparisonRow(['overall satisfaction', 'osat']);
+    if (osatComp) {
+      result.osat_vs_last_period = osatComp.vsLastPeriod;
+      result.osat_vs_papa_johns = osatComp.vsPapaJohns;
+    }
+
+    // Parse Accuracy from "How are we doing?" table
+    const accuracyComp = parseComparisonRow(['accuracy of order', 'accuracy']);
+    if (accuracyComp) {
+      result.accuracy_vs_last_period = accuracyComp.vsLastPeriod;
+      result.accuracy_vs_papa_johns = accuracyComp.vsPapaJohns;
+    }
+
+    // Parse Wait Time from "How are we doing?" table
+    const waitTimeComp = parseComparisonRow(['wait time', 'wait']);
+    if (waitTimeComp) {
+      result.wait_time_vs_last_period = waitTimeComp.vsLastPeriod;
+      result.wait_time_vs_papa_johns = waitTimeComp.vsPapaJohns;
+    }
+
+    return result;
+  });
+
+  // Map table data to expected structure
+  // Table values are already parsed (numbers or null) from cleanPct/parseInt
+  // Comparison values still need parsing
+  return {
+    period_start_date: data.period_start_date,
+    period_end_date: data.period_end_date,
+    responses: tableData.store?.responses ?? null,
+    osat: tableData.store?.osat ?? null,
+    accuracy_of_order: tableData.store?.accuracy_of_order ?? null,
+    wait_time: tableData.store?.wait_time ?? null,
+    pj_osat: tableData.papa_johns?.osat ?? null,
+    pj_accuracy: tableData.papa_johns?.accuracy_of_order ?? null,
+    pj_wait_time: tableData.papa_johns?.wait_time ?? null,
+    osat_vs_last_period: data.osat_vs_last_period ? parseValue(data.osat_vs_last_period) : null,
+    accuracy_vs_last_period: data.accuracy_vs_last_period ? parseValue(data.accuracy_vs_last_period) : null,
+    wait_time_vs_last_period: data.wait_time_vs_last_period ? parseValue(data.wait_time_vs_last_period) : null,
+    osat_vs_papa_johns: data.osat_vs_papa_johns ? parseValue(data.osat_vs_papa_johns) : null,
+    accuracy_vs_papa_johns: data.accuracy_vs_papa_johns ? parseValue(data.accuracy_vs_papa_johns) : null,
+    wait_time_vs_papa_johns: data.wait_time_vs_papa_johns ? parseValue(data.wait_time_vs_papa_johns) : null,
+  };
+}
+
+// Save data to database
+async function saveToDatabase(supabase, storeId, scrapedData) {
+  if (!supabase) {
+    console.log('⚠️  Skipping DB save - Supabase not configured');
+    return;
+  }
+
+  const storeNum = storeId.replace(/^0+/, '');
+  
+  const { error } = await supabase
+    .from('smg_scores')
+    .upsert({
+      store_number: storeNum,
+      period: 'current',
+      date: new Date().toISOString().split('T')[0],
+      period_start_date: scrapedData.period_start_date,
+      period_end_date: scrapedData.period_end_date,
+      osat: scrapedData.osat,
+      accuracy_of_order: scrapedData.accuracy_of_order,
+      wait_time: scrapedData.wait_time,
+      pj_osat: scrapedData.pj_osat,
+      pj_accuracy: scrapedData.pj_accuracy,
+      pj_wait_time: scrapedData.pj_wait_time,
+      responses: scrapedData.responses,
+      osat_vs_last_period: scrapedData.osat_vs_last_period,
+      accuracy_vs_last_period: scrapedData.accuracy_vs_last_period,
+      wait_time_vs_last_period: scrapedData.wait_time_vs_last_period,
+      osat_vs_papa_johns: scrapedData.osat_vs_papa_johns,
+      accuracy_vs_papa_johns: scrapedData.accuracy_vs_papa_johns,
+      wait_time_vs_papa_johns: scrapedData.wait_time_vs_papa_johns,
+      scraped_at: new Date().toISOString(),
+    }, {
+      onConflict: 'store_number,period'
+    });
+
+  if (error) {
+    console.error(`❌ Error saving store ${storeId}:`, error.message);
+    throw error;
+  }
+  
+  console.log(`✅ Data saved for store ${storeId}`);
+}
 
 (async () => {
+  const browser = await chromium.launch({ headless: false });
+
+  // Load saved cookies but start with clean storage (no remembered store/date state)
+  const context = await browser.newContext({
+    storageState: undefined  // don't load any saved storage state
+  });
+
+  // Add only the cookies (login session), not localStorage/sessionStorage
   const session = JSON.parse(readFileSync('./smg-session.json', 'utf8'));
   const cookies = session.cookies || session;
-
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext();
   await context.addCookies(cookies);
+
   const page = await context.newPage();
 
   // Stub NREUM before page loads to prevent tracking errors
@@ -18,141 +425,171 @@ import { readFileSync } from 'fs';
     window.NREUM.interaction = () => ({ save: () => {}, end: () => {} });
   });
 
-  // Go to the dashboard
   await page.goto('https://reporting.smg.com/dashboard.aspx?id=5', {
     waitUntil: 'domcontentloaded',
     timeout: 30000
   });
-
-  // Wait for page to fully initialize
   await page.waitForTimeout(3000);
 
-  // Optional safety: check if already on Current Period
-  const alreadyCurrent = await page.evaluate(() =>
-    document.body.innerText.includes('2/23/2026 - 3/29/2026')
-  );
-
-  if (alreadyCurrent) {
-    console.log('Already on Current Period — skipping Change Dates');
+  // Check for Change Dates and run Current Period setup if visible
+  const changeDates = await page.$('text=Change Dates').catch(() => null);
+  if (changeDates) {
+    console.log('✅ Change Dates visible, running Current Period setup');
+    await ensureCurrentPeriod(page);
   } else {
-    // Click "Change Dates" to open the modal
-    await page.waitForSelector('text=Change Dates', { state: 'attached' });
-    await page.evaluate(() => {
-      const el = [...document.querySelectorAll('span')]
-        .find(s => s.textContent?.trim() === 'Change Dates');
-      el?.click();
-    });
-    console.log('✅ Clicked Change Dates');
-
-    // Wait for modal - look for the Timeframe heading
-    await page.waitForSelector('text=Timeframe', { timeout: 10000 });
-    await page.waitForTimeout(1500);
-
-    // Debug: dump all select options in the modal
-    const dropdownInfo = await page.evaluate(() => {
-      const selects = document.querySelectorAll('select');
-      return Array.from(selects).map(s => ({
-        id: s.id,
-        name: s.name,
-        className: s.className,
-        options: Array.from(s.options).map(o => ({ value: o.value, text: o.text.trim() }))
-      }));
-    });
-    console.log('Dropdowns found:', JSON.stringify(dropdownInfo, null, 2));
-
-    // Find and set the period dropdown - try multiple approaches
-    const periodSet = await page.evaluate(() => {
-      // Try by ID first
-      let select = document.querySelector('#rbDateRangeSEL');
-      
-      // Try by finding select inside modal/dialog
-      if (!select) {
-        const modal = document.querySelector('.modal, [role="dialog"], .modal-dialog, .smg-modal');
-        if (modal) select = modal.querySelector('select');
-      }
-      
-      // Try any visible select
-      if (!select) {
-        const selects = Array.from(document.querySelectorAll('select'));
-        select = selects.find(s => {
-          const opts = Array.from(s.options).map(o => o.text.toLowerCase());
-          return opts.some(t => t.includes('period') || t.includes('current') || t.includes('last'));
-        });
-      }
-
-      if (!select) return { found: false };
-
-      // Log current value and options
-      const options = Array.from(select.options).map(o => ({ v: o.value, t: o.text.trim() }));
-      
-      // Find "Current Period" option
-      const currentOpt = Array.from(select.options).find(o => 
-        o.text.toLowerCase().includes('current period')
-      );
-      
-      if (currentOpt) {
-        select.value = currentOpt.value;
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-        return { found: true, id: select.id, selected: currentOpt.text, options };
-      }
-
-      // Just select first option if no "current period" found
-      select.selectedIndex = 0;
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      return { found: true, id: select.id, selected: select.options[0]?.text, options };
-    });
-
-    console.log('Period dropdown result:', JSON.stringify(periodSet, null, 2));
-    await page.waitForTimeout(500);
-
-    // 1. Wait for the modal to fully settle (this is critical)
-    await page.waitForTimeout(2000);
-
-    // 2. Find the Build Report element visually
-    const buildReport = await page.locator('.podButton', {
-      hasText: 'Build Report'
-    }).first();
-
-    // 3. Ensure it is visible
-    await buildReport.waitFor({ state: 'visible', timeout: 10000 });
-
-    // 4. Get exact screen position
-    const box = await buildReport.boundingBox();
-    if (!box) throw new Error('Build Report bounding box not found');
-
-    // 5. Click like a human (center of the element)
-    await page.mouse.move(
-      box.x + box.width / 2,
-      box.y + box.height / 2
-    );
-    await page.mouse.down();
-    await page.mouse.up();
-
-    console.log('✅ Human-like click on Build Report');
-
-    // 6. Give SMG time to process
-    await page.waitForTimeout(4000);
+    console.log('✅ Change Dates not visible, likely already on Current Period');
   }
 
-  // Switch to store 002021
-  await page.evaluate((storeId) => {
-    const select = document.querySelector('.unitSelectionDD');
-    if (!select) throw new Error('Store selector not found');
-    const option = Array.from(select.options).find(o => o.text.trim() === storeId);
-    if (!option) throw new Error(`Store ${storeId} not found`);
-    select.value = option.value;
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-  }, '002021');
+  // Step 3: Loop stores
+  const stores = ['002021', '002081', '002259', '002292', '002481', '003011'];
+  const allData = {};
 
-  await page.waitForFunction(() =>
-    document.body.innerText.includes('My Store - #002021'),
-    { timeout: 15000 }
-  );
+  for (const storeId of stores) {
+    try {
+      console.log(`\n🔄 Switching to store ${storeId}...`);
+      
+      await page.evaluate((id) => {
+        const select = document.querySelector('.unitSelectionDD');
+        const option = Array.from(select.options).find(o => o.text.trim() === id);
+        if (!option) throw new Error(`Store ${id} not found`);
+        select.value = option.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }, storeId);
 
-  const text = await page.evaluate(() => document.body.innerText);
-  console.log('PAGE TEXT:', text.substring(0, 2000));
-  await page.screenshot({ path: 'test-store-002021.png' });
-  console.log('✅ Screenshot saved');
+      await page.waitForFunction((id) =>
+        document.body.innerText.includes(`My Store - #${id}`),
+        storeId, { timeout: 15000 }
+      );
 
+      console.log(`✅ Switched to ${storeId}, waiting 30s for data...`);
+      await page.waitForTimeout(30000);
+
+      // Scrape data for this store
+      const data = await page.evaluate((storeId) => {
+        function parsePct(v) {
+          if (!v) return null;
+          const cleaned = v.replace('%', '').replace(/\*/g, '').trim();
+          if (cleaned === '' || cleaned === 'N/A' || cleaned === '**') return null;
+          const num = parseFloat(cleaned);
+          return isNaN(num) ? null : num;
+        }
+
+        function parseNum(v) {
+          if (!v) return null;
+          const num = parseInt(v.replace(/,/g, '').trim());
+          return isNaN(num) ? null : num;
+        }
+
+        // ── SECTION 1: Where should I focus? ─────────────────────────────
+        const focus = {};
+        const allTables = Array.from(document.querySelectorAll('table'));
+        
+        allTables.forEach(table => {
+          const headerRow = table.querySelector('tr');
+          if (!headerRow) return;
+          const headers = Array.from(headerRow.querySelectorAll('th, td')).map(h => h.innerText.trim());
+          const hasCurrentCol = headers.some(h => h === 'Current');
+          const hasPreviousCol = headers.some(h => h.includes('Previous'));
+          if (!hasCurrentCol || !hasPreviousCol) return;
+
+          // Find the heading above this table
+          let heading = '';
+          let el = table.previousElementSibling;
+          while (el) {
+            const text = el.innerText?.trim() || '';
+            if (text.length > 0) { heading = text; break; }
+            el = el.previousElementSibling;
+          }
+
+          // Find the store row
+          Array.from(table.querySelectorAll('tr')).forEach(row => {
+            const cells = Array.from(row.querySelectorAll('td')).map(td => td.innerText.trim());
+            if (cells[0] !== storeId) return;
+            if (heading.includes('Accuracy')) {
+              focus.accuracy_current = parsePct(cells[1]);
+              focus.accuracy_vs_previous = parsePct(cells[2]);
+            } else if (heading.includes('Wait')) {
+              focus.wait_time_current = parsePct(cells[1]);
+              focus.wait_time_vs_previous = parsePct(cells[2]);
+            }
+          });
+        });
+
+        // ── SECTION 2: How are we doing? ─────────────────────────────────
+        const doing = {};
+        const metricMap = {
+          'Overall Satisfaction': 'osat',
+          'Accuracy of Order': 'accuracy',
+          'CSC': 'csc',
+          'Comp Orders': 'comp_orders',
+          'Comp Sales': 'comp_sales'
+        };
+
+        Array.from(document.querySelectorAll('tr')).forEach(row => {
+          const cells = Array.from(row.querySelectorAll('td')).map(td => td.innerText.trim());
+          if (cells.length < 2) return;
+          const key = metricMap[cells[0]];
+          if (!key) return;
+          doing[key] = {
+            my_score: parsePct(cells[1]),
+            vs_last_period: parsePct(cells[2]),
+            pj_score: parsePct(cells[3]),
+            my_score_vs_pj: parsePct(cells[4])
+          };
+        });
+
+        // ── SECTION 3: Ranking ────────────────────────────────────────────
+        const ranking = { store: null, papa_johns: null };
+
+        allTables.forEach(table => {
+          const headerRow = table.querySelector('tr');
+          if (!headerRow) return;
+          const headers = Array.from(headerRow.querySelectorAll('th, td')).map(h => h.innerText.trim());
+          if (!headers.some(h => h.includes('OSAT'))) return;
+
+          const parseRankRow = (row) => {
+            if (!row) return null;
+            const cells = Array.from(row.querySelectorAll('td')).map(td => td.innerText.trim());
+            return {
+              responses: parseNum(cells[1]),
+              osat: parsePct(cells[2]),
+              taste_of_food: parsePct(cells[3]),
+              accuracy_of_order: parsePct(cells[4]),
+              wait_time: parsePct(cells[5]),
+              friendliness_of_delivery_driver: parsePct(cells[6])
+            };
+          };
+
+          const rows = Array.from(table.querySelectorAll('tr'));
+          const storeRow = rows.find(r => {
+            const first = r.querySelector('td')?.innerText.trim();
+            return first === storeId;
+          });
+          const pjRow = rows.find(r => {
+            const first = r.querySelector('td')?.innerText.trim();
+            return first === "Papa John's";
+          });
+
+          if (storeRow || pjRow) {
+            ranking.store = parseRankRow(storeRow);
+            ranking.papa_johns = parseRankRow(pjRow);
+          }
+        });
+
+        return { focus, doing, ranking };
+
+      }, storeId); // pass storeId with leading zeros e.g. "002021"
+
+      allData[storeId] = data;
+      console.log(`✅ Scraped ${storeId}:`, JSON.stringify(data, null, 2));
+      
+    } catch (error) {
+      console.error(`❌ Error processing store ${storeId}:`, error.message);
+      // Continue with next store - do not throw
+    }
+  }
+
+  console.log('\n=== ALL STORES DATA ===');
+  console.log(JSON.stringify(allData, null, 2));
   await browser.close();
 })();
