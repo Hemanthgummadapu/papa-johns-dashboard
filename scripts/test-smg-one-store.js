@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
@@ -458,7 +458,10 @@ async function saveToSupabase(storeId, data) {
 }
 
 (async () => {
-  const browser = await chromium.launch({ headless: false });
+  const browser = await chromium.launch({ 
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+  });
 
   // Load saved cookies but start with clean storage (no remembered store/date state)
   const context = await browser.newContext({
@@ -466,6 +469,9 @@ async function saveToSupabase(storeId, data) {
   });
 
   // Add only the cookies (login session), not localStorage/sessionStorage
+  if (!existsSync('./smg-session.json')) {
+    throw new Error('smg-session.json not found. Please run smg-auto-session.ts first to refresh the session.');
+  }
   const session = JSON.parse(readFileSync('./smg-session.json', 'utf8'));
   const cookies = session.cookies || session;
   await context.addCookies(cookies);
@@ -495,6 +501,11 @@ async function saveToSupabase(storeId, data) {
     console.log('✅ Change Dates not visible, likely already on Current Period');
   }
 
+  // Wait for page to fully reload after Build Report
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForSelector('.unitSelectionDD', { timeout: 30000, state: 'attached' });
+  console.log('✅ Page ready for store switching');
+
   // Step 3: Loop stores
   const stores = ['002021', '002081', '002259', '002292', '002481', '003011'];
   const allData = {};
@@ -503,13 +514,21 @@ async function saveToSupabase(storeId, data) {
     try {
       console.log(`\n🔄 Switching to store ${storeId}...`);
       
+      // Wait for selector to be available before switching
+      await page.waitForSelector('.unitSelectionDD', { timeout: 30000, state: 'attached' });
+      
       await page.evaluate((id) => {
         const select = document.querySelector('.unitSelectionDD');
+        if (!select) throw new Error(`Store selector not found`);
         const option = Array.from(select.options).find(o => o.text.trim() === id);
         if (!option) throw new Error(`Store ${id} not found`);
         select.value = option.value;
         select.dispatchEvent(new Event('change', { bubbles: true }));
       }, storeId);
+      
+      // Wait for page to reload after store switch
+      await page.waitForLoadState('domcontentloaded');
+      await page.waitForTimeout(2000);
 
       await page.waitForFunction((id) =>
         document.body.innerText.includes(`My Store - #${id}`),
@@ -550,14 +569,29 @@ async function saveToSupabase(storeId, data) {
               const metric = cells[0]; // "Accuracy of Order" or "Wait Time"
               const dataRow = rows[i + 1];
               if (!dataRow) return;
-              const dataCells = Array.from(dataRow.querySelectorAll('td')).map(c => c.innerText.trim());
+              const dataRowCells = Array.from(dataRow.querySelectorAll('td'));
+              const dataCells = dataRowCells.map(c => c.innerText.trim());
               if (dataCells[0] !== storeId) return;
+              
+              // Get cell elements for current (index 1) and vs_previous (index 2)
+              const currentCell = dataRowCells[1];
+              const vsPreviousCell = dataRowCells[2];
+              
+              // Parse vs_previous with sign based on class
+              const vsPreviousRaw = parsePct(dataCells[2]);
+              let vsPrevious = vsPreviousRaw;
+              if (vsPreviousRaw !== null && vsPreviousCell) {
+                const vsPreviousClass = vsPreviousCell.className || '';
+                const isNegative = vsPreviousClass.includes('podTextRed') || vsPreviousClass.includes('Red');
+                vsPrevious = isNegative && vsPreviousRaw > 0 ? -vsPreviousRaw : vsPreviousRaw;
+              }
+              
               if (metric.includes('Accuracy')) {
                 focus.accuracy_current = parsePct(dataCells[1]);
-                focus.accuracy_vs_previous = parsePct(dataCells[2]);
+                focus.accuracy_vs_previous = vsPrevious;
               } else if (metric.includes('Wait')) {
                 focus.wait_time_current = parsePct(dataCells[1]);
-                focus.wait_time_vs_previous = parsePct(dataCells[2]);
+                focus.wait_time_vs_previous = vsPrevious;
               }
             }
           });
@@ -571,16 +605,64 @@ async function saveToSupabase(storeId, data) {
           'Comp Orders': 'comp_orders',
           'Comp Sales': 'comp_sales'
         };
+        
         Array.from(document.querySelectorAll('tr')).forEach(row => {
-          const cells = Array.from(row.querySelectorAll('td')).map(c => c.innerText.trim());
+          const rowCells = Array.from(row.querySelectorAll('td'));
+          const cells = rowCells.map(c => c.innerText.trim());
           if (cells.length < 2) return;
           const key = metricMap[cells[0]];
           if (!key) return;
+          
+          // Get cell elements and values
+          const vsLastPeriodCell = rowCells[2];
+          const myScore = parsePct(cells[1]);
+          const pjScore = parsePct(cells[3]);
+          
+          // Parse vs_last_period with sign based on class
+          const vsLastPeriodRaw = parsePct(cells[2]);
+          let vsLastPeriod = vsLastPeriodRaw;
+          if (vsLastPeriodRaw !== null && vsLastPeriodCell) {
+            const vsLastPeriodClass = vsLastPeriodCell.className || '';
+            
+            if (vsLastPeriodClass.includes('podTextGreen')) {
+              // Green → positive (keep as is)
+              vsLastPeriod = vsLastPeriodRaw;
+            } else if (vsLastPeriodClass.includes('podTextRed')) {
+              // Red → negative (negate)
+              vsLastPeriod = vsLastPeriodRaw > 0 ? -vsLastPeriodRaw : vsLastPeriodRaw;
+            } else if (vsLastPeriodClass.includes('podTextGrey')) {
+              // Grey → check logic
+              // If my_score === 0 or null AND vs_last_period > 0 → negate (score dropped)
+              if ((myScore === 0 || myScore === null) && vsLastPeriodRaw > 0) {
+                vsLastPeriod = -vsLastPeriodRaw;
+              } else if (myScore !== null && pjScore !== null && myScore < pjScore) {
+                // If my_score < pj_score → negative
+                vsLastPeriod = vsLastPeriodRaw > 0 ? -vsLastPeriodRaw : vsLastPeriodRaw;
+              } else {
+                // Otherwise → positive
+                vsLastPeriod = vsLastPeriodRaw;
+              }
+            } else {
+              // No class → keep as scraped
+              vsLastPeriod = vsLastPeriodRaw;
+            }
+          }
+          
+          // Parse my_score_vs_pj with sign based on class
+          const vsPjCell = rowCells[4];
+          const vsPjRaw = parsePct(cells[4]);
+          let vsPj = vsPjRaw;
+          if (vsPjRaw !== null && vsPjCell) {
+            const vsPjClass = vsPjCell.className || '';
+            const isNegative = vsPjClass.includes('podTextRed') || vsPjClass.includes('Red');
+            vsPj = isNegative && vsPjRaw > 0 ? -vsPjRaw : vsPjRaw;
+          }
+          
           doing[key] = {
-            my_score: parsePct(cells[1]),
-            vs_last_period: parsePct(cells[2]),
-            pj_score: parsePct(cells[3]),
-            my_score_vs_pj: parsePct(cells[4])
+            my_score: myScore,
+            vs_last_period: vsLastPeriod,
+            pj_score: pjScore,
+            my_score_vs_pj: vsPj
           };
         });
 

@@ -29,10 +29,19 @@ export async function GET() {
       lastScraped = timestamps[0] || null
     }
 
-    return NextResponse.json({
-      data: data || [],
-      lastScraped,
-    })
+    return NextResponse.json(
+      {
+        data: data || [],
+        lastScraped,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      }
+    )
   } catch (error) {
     console.error('Error in SMG data API:', error)
     return NextResponse.json(
