@@ -54,33 +54,83 @@ export default function SMGDashboardEmbed() {
   const [loading, setLoading] = useState(true)
   const [selectedStore, setSelectedStore] = useState<string | null>(null)
   const [showStoreModal, setShowStoreModal] = useState(false)
+  const [countdown, setCountdown] = useState<string>('')
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const res = await fetch('/api/smg-data', { cache: 'no-store' })
-        if (res.ok) {
-          const json = await res.json()
-          setData(json.data || [])
-          setLastScraped(json.lastScraped || null)
+  // Fetch data function
+  const fetchData = async () => {
+    try {
+      // Add timestamp to bust cache
+      const res = await fetch(`/api/smg-data?t=${Date.now()}`, { 
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
         }
-      } catch (error) {
-        console.error('Error fetching SMG data:', error)
-      } finally {
-        setLoading(false)
+      })
+      if (res.ok) {
+        const json = await res.json()
+        setData(json.data || [])
+        setLastScraped(json.lastScraped || null)
+      }
+    } catch (error) {
+      console.error('Error fetching SMG data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Calculate and update countdown for next scrape (every 5 hours)
+  useEffect(() => {
+    const updateCountdown = () => {
+      if (!lastScraped) {
+        setCountdown('—')
+        return
+      }
+
+      const lastScrapedTime = new Date(lastScraped).getTime()
+      const nextScrapeTime = lastScrapedTime + (5 * 60 * 60 * 1000) // 5 hours in milliseconds
+      const now = Date.now()
+      const diff = nextScrapeTime - now
+
+      if (diff <= 0) {
+        setCountdown('Due now')
+        return
+      }
+
+      const hours = Math.floor(diff / (1000 * 60 * 60))
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000)
+
+      if (hours > 0) {
+        setCountdown(`${hours}h ${minutes}m ${seconds}s`)
+      } else if (minutes > 0) {
+        setCountdown(`${minutes}m ${seconds}s`)
+      } else {
+        setCountdown(`${seconds}s`)
       }
     }
+
+    updateCountdown()
+    const interval = setInterval(updateCountdown, 1000) // Update every second
+    return () => clearInterval(interval)
+  }, [lastScraped])
+
+  // Auto-refresh every 5 minutes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchData()
+    }, 5 * 60 * 1000) // refresh every 5 minutes
+    return () => clearInterval(interval)
+  }, [])
+
+  // Initial data fetch
+  useEffect(() => {
     fetchData()
   }, [])
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    try {
-      await fetch('/api/smg-scrape', { method: 'POST' })
-    } finally {
-      setRefreshing(false)
-      window.location.reload()
-    }
+    await fetchData()
+    setTimeout(() => setRefreshing(false), 1000)
   }
 
   const formatNumber = (value: number | null) => {
@@ -162,7 +212,7 @@ export default function SMGDashboardEmbed() {
 
   return (
     <div style={{ position: 'relative' }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16, marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
           Last scraped:{' '}
           {lastScraped
@@ -174,6 +224,12 @@ export default function SMGDashboardEmbed() {
                 minute: '2-digit',
               })
             : 'Never'}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
+          Next scrape:{' '}
+          <span style={{ color: 'var(--text-secondary)', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+            {countdown || '—'}
+          </span>
         </div>
         <button
           onClick={handleRefresh}
@@ -209,7 +265,7 @@ export default function SMGDashboardEmbed() {
             }
           }}
         >
-          {refreshing ? '⏳ Scraping...' : '🔄 Refresh Data'}
+          {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
         </button>
       </div>
       {/* GRID VIEW */}
@@ -380,220 +436,270 @@ export default function SMGDashboardEmbed() {
               background: 'var(--bg-surface)',
               borderRadius: 16,
               padding: 32,
-              maxWidth: 1200,
+              maxWidth: 860,
               width: '100%',
               maxHeight: '90vh',
               overflowY: 'auto',
-              border: '1px solid var(--border-subtle)',
               position: 'relative',
               margin: 'auto',
+              border: '1px solid var(--border-subtle)',
+              fontFamily: "'Inter', sans-serif",
             }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-            <div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 24, color: 'var(--text-primary)' }}>
-                Store {selectedStoreData.store_id}
+              <div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 24, color: 'var(--text-primary)' }}>
+                  Store {selectedStoreData.store_id}
+                </div>
+                <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 4, fontFamily: "'Inter', sans-serif" }}>
+                  Last scraped: {selectedStoreData.scraped_at ? new Date(selectedStoreData.scraped_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never'}
+                </div>
               </div>
-              <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 4, fontFamily: "'Inter', sans-serif" }}>
-                Last scraped: {selectedStoreData.scraped_at ? new Date(selectedStoreData.scraped_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never'}
-              </div>
+              <button
+                onClick={() => setShowStoreModal(false)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  border: '1px solid var(--border-default)',
+                  background: 'var(--bg-overlay)',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 18,
+                  fontFamily: "'Inter', sans-serif",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--bg-elevated)'
+                  e.currentTarget.style.color = 'var(--text-primary)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'var(--bg-overlay)'
+                  e.currentTarget.style.color = 'var(--text-secondary)'
+                }}
+              >
+                ×
+              </button>
             </div>
-            <button
-            onClick={() => setShowStoreModal(false)}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: '1px solid var(--border-default)',
-              background: 'var(--bg-overlay)',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 18,
-              fontFamily: "'Inter', sans-serif",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'var(--bg-elevated)'
-              e.currentTarget.style.color = 'var(--text-primary)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'var(--bg-overlay)'
-              e.currentTarget.style.color = 'var(--text-secondary)'
-            }}
-            >
-              ×
-            </button>
-          </div>
 
-          {/* Three Columns */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
-            {/* Column 1 — Focus Metrics */}
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.1em', marginBottom: 16 }}>
+            {/* SECTION 1 — WHERE SHOULD I FOCUS? */}
+            <div style={{ marginTop: 28 }}>
+              <div style={{ 
+                color: 'var(--text-primary)', 
+                fontSize: 16, 
+                fontWeight: 600, 
+                fontFamily: "'Inter', sans-serif",
+                borderBottom: '2px solid var(--border-subtle)',
+                paddingBottom: 8,
+                marginBottom: 16
+              }}>
                 WHERE SHOULD I FOCUS?
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* Accuracy Row */}
-                <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: 16 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                    ACCURACY OF ORDER
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 4 }}>
-                        {formatNumber(selectedStoreData.focus_accuracy_current)}%
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
-                        Previous: {formatNumber(selectedStoreData.focus_accuracy_vs_previous)}%
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', fontWeight: 400, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>METRIC</th>
+                    <th style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 400, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>CURRENT</th>
+                    <th style={{ textAlign: 'right', fontSize: 14, color: 'var(--text-primary)', fontWeight: 400, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>VS PREVIOUS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>Accuracy of Order</td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                      {formatNumber(selectedStoreData.focus_accuracy_current)}%
+                    </td>
+                    <td style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                       {(() => {
-                        const diff = getFocusDifference(selectedStoreData.focus_accuracy_current, selectedStoreData.focus_accuracy_vs_previous)
-                        if (diff === null) return <div style={{ fontSize: 14, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>—</div>
-                        const isGood = diff > 0
-                        const color = diff > 0 ? 'var(--success-text)' : 'var(--danger-text)'
-                        return (
-                          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'Inter', sans-serif", color }}>
-                            {isGood ? '↑' : '↓'} {diff > 0 ? '+' : ''}{diff.toFixed(1)}%
-                          </div>
-                        )
+                        const current = selectedStoreData.focus_accuracy_current ?? 0
+                        const previous = selectedStoreData.focus_accuracy_vs_previous ?? 0
+                        if (previous === 0 && current === 0) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                        const diff = current - previous
+                        if (diff > 0) {
+                          return <span style={{ color: 'var(--success-text)' }}>↑ +{diff.toFixed(1)}</span>
+                        } else if (diff < 0) {
+                          return <span style={{ color: 'var(--danger-text)' }}>↓ {diff.toFixed(1)}</span>
+                        }
+                        return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                       })()}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Wait Time Row */}
-                <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: 16 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                    WAIT TIME
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 4 }}>
-                        {formatNumber(selectedStoreData.focus_wait_time_current)}%
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
-                        Previous: {formatNumber(selectedStoreData.focus_wait_time_vs_previous)}%
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>Wait Time</td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                      {formatNumber(selectedStoreData.focus_wait_time_current)}%
+                    </td>
+                    <td style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                       {(() => {
-                        const diff = getFocusDifference(selectedStoreData.focus_wait_time_current, selectedStoreData.focus_wait_time_vs_previous)
-                        if (diff === null) return <div style={{ fontSize: 14, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>—</div>
-                        const isGood = diff > 0
-                        const color = diff > 0 ? 'var(--success-text)' : 'var(--danger-text)'
-                        return (
-                          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'Inter', sans-serif", color }}>
-                            {isGood ? '↑' : '↓'} {diff > 0 ? '+' : ''}{diff.toFixed(1)}%
-                          </div>
-                        )
+                        const current = selectedStoreData.focus_wait_time_current ?? 0
+                        const previous = selectedStoreData.focus_wait_time_vs_previous ?? 0
+                        if (previous === 0 && current === 0) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                        const diff = current - previous
+                        if (diff > 0) {
+                          return <span style={{ color: 'var(--success-text)' }}>↑ +{diff.toFixed(1)}</span>
+                        } else if (diff < 0) {
+                          return <span style={{ color: 'var(--danger-text)' }}>↓ {diff.toFixed(1)}</span>
+                        }
+                        return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                       })()}
-                    </div>
-                  </div>
-                </div>
-              </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
-            {/* Column 2 — How Are We Doing */}
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.1em', marginBottom: 16 }}>
+            {/* SECTION 2 — HOW ARE WE DOING? */}
+            <div style={{ marginTop: 28 }}>
+              <div style={{ 
+                color: 'var(--text-primary)', 
+                fontSize: 16, 
+                fontWeight: 600, 
+                fontFamily: "'Inter', sans-serif",
+                borderBottom: '2px solid var(--border-subtle)',
+                paddingBottom: 8,
+                marginBottom: 16
+              }}>
                 HOW ARE WE DOING?
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {[
-                  { key: 'osat', label: 'Overall Satisfaction', my: selectedStoreData.osat_my_score, vsLast: selectedStoreData.osat_vs_last_period, pj: selectedStoreData.osat_pj_score, vsPj: selectedStoreData.osat_vs_pj },
-                  { key: 'accuracy', label: 'Accuracy of Order', my: selectedStoreData.accuracy_my_score, vsLast: selectedStoreData.accuracy_vs_last_period, pj: selectedStoreData.accuracy_pj_score, vsPj: selectedStoreData.accuracy_vs_pj },
-                  { key: 'csc', label: 'CSC', my: selectedStoreData.csc_my_score, vsLast: selectedStoreData.csc_vs_last_period, pj: selectedStoreData.csc_pj_score, vsPj: selectedStoreData.csc_vs_pj },
-                  { key: 'comp_orders', label: 'Comp Orders', my: selectedStoreData.comp_orders_my_score, vsLast: selectedStoreData.comp_orders_vs_last_period, pj: selectedStoreData.comp_orders_pj_score, vsPj: selectedStoreData.comp_orders_vs_pj },
-                  { key: 'comp_sales', label: 'Comp Sales', my: selectedStoreData.comp_sales_my_score, vsLast: selectedStoreData.comp_sales_vs_last_period, pj: selectedStoreData.comp_sales_pj_score, vsPj: selectedStoreData.comp_sales_vs_pj },
-                ].map((item) => {
-                  // vs_last_period appears to be stored as: previous - current
-                  // We need: current - previous, so we flip the sign
-                  const vsLastDiff = item.vsLast !== null ? -item.vsLast : null
-                  const vsLastDelta = formatDelta(vsLastDiff)
-                  // Calculate vs PJ as: my_score - pj_score
-                  const vsPjDiff = (item.my ?? 0) - (item.pj ?? 0)
-                  const vsPjDelta = formatDelta(vsPjDiff)
-                  return (
-                    <div key={item.key} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: 16 }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 12 }}>
-                        {item.label.toUpperCase()}
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        <div>
-                          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", marginBottom: 4 }}>My Score</div>
-                          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 8 }}>
-                            {formatNumber(item.my)}%
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <div style={{ fontSize: 12, color: vsLastDelta.color, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
-                              {vsLastDelta.text} vs Last
-                            </div>
-                            <div style={{ fontSize: 12, color: vsPjDelta.color, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
-                              {vsPjDelta.text} vs PJ
-                            </div>
-                          </div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", marginBottom: 4 }}>Papa John's</div>
-                          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--info-text)' }}>
-                            {formatNumber(item.pj)}%
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>METRIC</th>
+                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>MY SCORE</th>
+                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>VS LAST PERIOD</th>
+                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>PAPA JOHN'S</th>
+                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>VS PJ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { key: 'osat', label: 'Overall Satisfaction', my: selectedStoreData.osat_my_score, vsLast: selectedStoreData.osat_vs_last_period, pj: selectedStoreData.osat_pj_score, vsPj: selectedStoreData.osat_vs_pj },
+                    { key: 'accuracy', label: 'Accuracy of Order', my: selectedStoreData.accuracy_my_score, vsLast: selectedStoreData.accuracy_vs_last_period, pj: selectedStoreData.accuracy_pj_score, vsPj: selectedStoreData.accuracy_vs_pj },
+                    { key: 'csc', label: 'CSC', my: selectedStoreData.csc_my_score, vsLast: selectedStoreData.csc_vs_last_period, pj: selectedStoreData.csc_pj_score, vsPj: selectedStoreData.csc_vs_pj },
+                    { key: 'comp_orders', label: 'Comp Orders', my: selectedStoreData.comp_orders_my_score, vsLast: selectedStoreData.comp_orders_vs_last_period, pj: selectedStoreData.comp_orders_pj_score, vsPj: selectedStoreData.comp_orders_vs_pj },
+                    { key: 'comp_sales', label: 'Comp Sales', my: selectedStoreData.comp_sales_my_score, vsLast: selectedStoreData.comp_sales_vs_last_period, pj: selectedStoreData.comp_sales_pj_score, vsPj: selectedStoreData.comp_sales_vs_pj },
+                  ].map((item, idx) => {
+                    // vs_last_period is stored with correct sign from SMG (based on arrow/color)
+                    // Positive = improving, Negative = declining
+                    const vsLastDiff = item.vsLast !== null ? item.vsLast : null
+                    const vsPjDiff = (item.my ?? 0) - (item.pj ?? 0)
+                    return (
+                      <tr key={item.key} style={{ background: idx % 2 === 0 ? 'transparent' : 'var(--bg-base)' }}>
+                        <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', padding: '14px 0' }}>{item.label}</td>
+                        <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '14px 0' }}>
+                          {formatNumber(item.my)}%
+                        </td>
+                        <td style={{ textAlign: 'center', fontSize: 14, fontWeight: 500, padding: '14px 0' }}>
+                          {vsLastDiff === null ? (
+                            <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                          ) : vsLastDiff > 0 ? (
+                            <span style={{ color: 'var(--success-text)' }}>↑ +{vsLastDiff.toFixed(1)}</span>
+                          ) : (
+                            <span style={{ color: 'var(--danger-text)' }}>↓ {vsLastDiff.toFixed(1)}</span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 0' }}>
+                          {formatNumber(item.pj)}%
+                        </td>
+                        <td style={{ textAlign: 'center', fontSize: 14, fontWeight: 500, padding: '14px 0' }}>
+                          {vsPjDiff === 0 && (item.my === null || item.pj === null) ? (
+                            <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                          ) : vsPjDiff > 0 ? (
+                            <span style={{ color: 'var(--success-text)' }}>↑ +{vsPjDiff.toFixed(1)}</span>
+                          ) : vsPjDiff < 0 ? (
+                            <span style={{ color: 'var(--danger-text)' }}>↓ {vsPjDiff.toFixed(1)}</span>
+                          ) : (
+                            <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
 
-            {/* Column 3 — Ranking */}
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.1em', marginBottom: 16 }}>
+            {/* SECTION 3 — RANKING */}
+            <div style={{ marginTop: 28 }}>
+              <div style={{ 
+                color: 'var(--text-primary)', 
+                fontSize: 16, 
+                fontWeight: 600, 
+                fontFamily: "'Inter', sans-serif",
+                borderBottom: '2px solid var(--border-subtle)',
+                paddingBottom: 8,
+                marginBottom: 16
+              }}>
                 RANKING
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {[
-                  { key: 'responses', label: 'Responses', store: selectedStoreData.ranking_store_responses?.toString() || '—', pj: selectedStoreData.ranking_pj_responses?.toString() || '—', isNumber: true },
-                  { key: 'osat', label: 'OSAT', store: selectedStoreData.ranking_store_osat, pj: selectedStoreData.ranking_pj_osat },
-                  { key: 'taste', label: 'Taste of Food', store: selectedStoreData.ranking_store_taste_of_food, pj: selectedStoreData.ranking_pj_taste_of_food },
-                  { key: 'accuracy', label: 'Accuracy of Order', store: selectedStoreData.ranking_store_accuracy_of_order, pj: selectedStoreData.ranking_pj_accuracy_of_order },
-                  { key: 'wait_time', label: 'Wait Time', store: selectedStoreData.ranking_store_wait_time, pj: selectedStoreData.ranking_pj_wait_time },
-                  { key: 'friendliness', label: 'Friendliness', store: selectedStoreData.ranking_store_friendliness, pj: selectedStoreData.ranking_pj_friendliness },
-                ].map((item) => {
-                  const storeValue = item.isNumber ? item.store : formatPercent(item.store as number | null)
-                  const pjValue = item.isNumber ? item.pj : formatPercent(item.pj as number | null)
-                  const storeColor = item.isNumber ? 'var(--text-primary)' : getRankingColor(item.store as number | null, item.pj as number | null)
-                  return (
-                    <div key={item.key} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: 16 }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 12 }}>
-                        {item.label.toUpperCase()}
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        <div>
-                          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", marginBottom: 4 }}>Store {selectedStoreData.store_id}</div>
-                          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: storeColor }}>
-                            {storeValue}
-                          </div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", marginBottom: 4 }}>Papa John's</div>
-                          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--info-text)' }}>
-                            {pjValue}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>STORE</th>
+                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>RESP</th>
+                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>OSAT</th>
+                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>TASTE</th>
+                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>ACCURACY</th>
+                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>WAIT TIME</th>
+                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>FRIENDLINESS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Store row */}
+                  <tr>
+                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '14px 12px' }}>
+                      Store {selectedStoreData.store_id}
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_responses ?? 0) >= (selectedStoreData.ranking_pj_responses ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {selectedStoreData.ranking_store_responses ?? '—'}
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_osat ?? 0) >= (selectedStoreData.ranking_pj_osat ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {formatNumber(selectedStoreData.ranking_store_osat)}%
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_taste_of_food ?? 0) >= (selectedStoreData.ranking_pj_taste_of_food ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {formatNumber(selectedStoreData.ranking_store_taste_of_food)}%
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_accuracy_of_order ?? 0) >= (selectedStoreData.ranking_pj_accuracy_of_order ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {formatNumber(selectedStoreData.ranking_store_accuracy_of_order)}%
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_wait_time ?? 0) >= (selectedStoreData.ranking_pj_wait_time ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {formatNumber(selectedStoreData.ranking_store_wait_time)}%
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_friendliness ?? 0) >= (selectedStoreData.ranking_pj_friendliness ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {formatNumber(selectedStoreData.ranking_store_friendliness)}%
+                    </td>
+                  </tr>
+                  {/* Papa John's row */}
+                  <tr style={{ background: 'var(--bg-base)' }}>
+                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      Papa John's
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {selectedStoreData.ranking_pj_responses ?? '—'}
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {formatNumber(selectedStoreData.ranking_pj_osat)}%
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {formatNumber(selectedStoreData.ranking_pj_taste_of_food)}%
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {formatNumber(selectedStoreData.ranking_pj_accuracy_of_order)}%
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {formatNumber(selectedStoreData.ranking_pj_wait_time)}%
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                      {formatNumber(selectedStoreData.ranking_pj_friendliness)}%
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
           </div>
         </div>
       )}

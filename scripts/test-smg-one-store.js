@@ -569,14 +569,29 @@ async function saveToSupabase(storeId, data) {
               const metric = cells[0]; // "Accuracy of Order" or "Wait Time"
               const dataRow = rows[i + 1];
               if (!dataRow) return;
-              const dataCells = Array.from(dataRow.querySelectorAll('td')).map(c => c.innerText.trim());
+              const dataRowCells = Array.from(dataRow.querySelectorAll('td'));
+              const dataCells = dataRowCells.map(c => c.innerText.trim());
               if (dataCells[0] !== storeId) return;
+              
+              // Get cell elements for current (index 1) and vs_previous (index 2)
+              const currentCell = dataRowCells[1];
+              const vsPreviousCell = dataRowCells[2];
+              
+              // Parse vs_previous with sign based on class
+              const vsPreviousRaw = parsePct(dataCells[2]);
+              let vsPrevious = vsPreviousRaw;
+              if (vsPreviousRaw !== null && vsPreviousCell) {
+                const vsPreviousClass = vsPreviousCell.className || '';
+                const isNegative = vsPreviousClass.includes('podTextRed') || vsPreviousClass.includes('Red');
+                vsPrevious = isNegative && vsPreviousRaw > 0 ? -vsPreviousRaw : vsPreviousRaw;
+              }
+              
               if (metric.includes('Accuracy')) {
                 focus.accuracy_current = parsePct(dataCells[1]);
-                focus.accuracy_vs_previous = parsePct(dataCells[2]);
+                focus.accuracy_vs_previous = vsPrevious;
               } else if (metric.includes('Wait')) {
                 focus.wait_time_current = parsePct(dataCells[1]);
-                focus.wait_time_vs_previous = parsePct(dataCells[2]);
+                focus.wait_time_vs_previous = vsPrevious;
               }
             }
           });
@@ -590,16 +605,64 @@ async function saveToSupabase(storeId, data) {
           'Comp Orders': 'comp_orders',
           'Comp Sales': 'comp_sales'
         };
+        
         Array.from(document.querySelectorAll('tr')).forEach(row => {
-          const cells = Array.from(row.querySelectorAll('td')).map(c => c.innerText.trim());
+          const rowCells = Array.from(row.querySelectorAll('td'));
+          const cells = rowCells.map(c => c.innerText.trim());
           if (cells.length < 2) return;
           const key = metricMap[cells[0]];
           if (!key) return;
+          
+          // Get cell elements and values
+          const vsLastPeriodCell = rowCells[2];
+          const myScore = parsePct(cells[1]);
+          const pjScore = parsePct(cells[3]);
+          
+          // Parse vs_last_period with sign based on class
+          const vsLastPeriodRaw = parsePct(cells[2]);
+          let vsLastPeriod = vsLastPeriodRaw;
+          if (vsLastPeriodRaw !== null && vsLastPeriodCell) {
+            const vsLastPeriodClass = vsLastPeriodCell.className || '';
+            
+            if (vsLastPeriodClass.includes('podTextGreen')) {
+              // Green → positive (keep as is)
+              vsLastPeriod = vsLastPeriodRaw;
+            } else if (vsLastPeriodClass.includes('podTextRed')) {
+              // Red → negative (negate)
+              vsLastPeriod = vsLastPeriodRaw > 0 ? -vsLastPeriodRaw : vsLastPeriodRaw;
+            } else if (vsLastPeriodClass.includes('podTextGrey')) {
+              // Grey → check logic
+              // If my_score === 0 or null AND vs_last_period > 0 → negate (score dropped)
+              if ((myScore === 0 || myScore === null) && vsLastPeriodRaw > 0) {
+                vsLastPeriod = -vsLastPeriodRaw;
+              } else if (myScore !== null && pjScore !== null && myScore < pjScore) {
+                // If my_score < pj_score → negative
+                vsLastPeriod = vsLastPeriodRaw > 0 ? -vsLastPeriodRaw : vsLastPeriodRaw;
+              } else {
+                // Otherwise → positive
+                vsLastPeriod = vsLastPeriodRaw;
+              }
+            } else {
+              // No class → keep as scraped
+              vsLastPeriod = vsLastPeriodRaw;
+            }
+          }
+          
+          // Parse my_score_vs_pj with sign based on class
+          const vsPjCell = rowCells[4];
+          const vsPjRaw = parsePct(cells[4]);
+          let vsPj = vsPjRaw;
+          if (vsPjRaw !== null && vsPjCell) {
+            const vsPjClass = vsPjCell.className || '';
+            const isNegative = vsPjClass.includes('podTextRed') || vsPjClass.includes('Red');
+            vsPj = isNegative && vsPjRaw > 0 ? -vsPjRaw : vsPjRaw;
+          }
+          
           doing[key] = {
-            my_score: parsePct(cells[1]),
-            vs_last_period: parsePct(cells[2]),
-            pj_score: parsePct(cells[3]),
-            my_score_vs_pj: parsePct(cells[4])
+            my_score: myScore,
+            vs_last_period: vsLastPeriod,
+            pj_score: pjScore,
+            my_score_vs_pj: vsPj
           };
         });
 
