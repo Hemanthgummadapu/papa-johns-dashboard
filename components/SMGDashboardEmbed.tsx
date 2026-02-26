@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import SMGComments from './SMGComments'
 
 interface SMGScore {
   id: string
@@ -121,6 +122,18 @@ export default function SMGDashboardEmbed() {
     }, 5 * 60 * 1000) // refresh every 5 minutes
     return () => clearInterval(interval)
   }, [])
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (showStoreModal) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [showStoreModal])
 
   // Initial data fetch
   useEffect(() => {
@@ -412,6 +425,19 @@ export default function SMGDashboardEmbed() {
         })}
       </div>
 
+      {/* Comments section - hidden when modal is open */}
+      {!showStoreModal && (
+        <div style={{ marginTop: 40 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>
+            What Are People Saying?
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400, marginBottom: 24 }}>
+            Recent customer comments from SMG
+          </div>
+          <SMGComments comments={[]} />
+        </div>
+      )}
+
       {/* MODAL VIEW */}
       {showStoreModal && selectedStoreData && (
         <div
@@ -421,13 +447,14 @@ export default function SMGDashboardEmbed() {
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(0, 0, 0, 0.85)',
-            zIndex: 9999,
+            background: 'transparent',
+            zIndex: 99999,
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'center',
-            padding: 40,
-            overflowY: 'auto',
+            padding: '40px 20px',
+            overflow: 'hidden',
+            pointerEvents: 'none',
           }}
           onClick={() => setShowStoreModal(false)}
         >
@@ -438,12 +465,15 @@ export default function SMGDashboardEmbed() {
               padding: 32,
               maxWidth: 860,
               width: '100%',
-              maxHeight: '90vh',
+              height: 'calc(100vh - 80px)',
               overflowY: 'auto',
+              overflowX: 'hidden',
               position: 'relative',
-              margin: 'auto',
+              marginTop: '40px',
               border: '1px solid var(--border-subtle)',
               fontFamily: "'Inter', sans-serif",
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+              pointerEvents: 'auto',
             }}
             onClick={(e) => e.stopPropagation()}
           >
