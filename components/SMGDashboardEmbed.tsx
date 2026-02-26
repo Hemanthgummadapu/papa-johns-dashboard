@@ -50,6 +50,7 @@ const STORE_COLORS = ['#e8410a', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#0
 export default function SMGDashboardEmbed() {
   const [data, setData] = useState<SMGScore[]>([])
   const [lastScraped, setLastScraped] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [selectedStore, setSelectedStore] = useState<string | null>(null)
   const [showStoreModal, setShowStoreModal] = useState(false)
@@ -71,6 +72,16 @@ export default function SMGDashboardEmbed() {
     }
     fetchData()
   }, [])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await fetch('/api/smg-scrape', { method: 'POST' })
+    } finally {
+      setRefreshing(false)
+      window.location.reload()
+    }
+  }
 
   const formatNumber = (value: number | null) => {
     if (value === null) return '—'
@@ -151,6 +162,56 @@ export default function SMGDashboardEmbed() {
 
   return (
     <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
+          Last scraped:{' '}
+          {lastScraped
+            ? new Date(lastScraped).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              })
+            : 'Never'}
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          style={{
+            height: 32,
+            padding: '0 12px',
+            borderRadius: 8,
+            border: '1px solid var(--border-default)',
+            background: 'var(--bg-overlay)',
+            color: 'var(--text-secondary)',
+            cursor: refreshing ? 'not-allowed' : 'pointer',
+            opacity: refreshing ? 0.6 : 1,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            fontSize: 12,
+            fontFamily: "'Inter', sans-serif",
+            fontWeight: 600,
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={(e) => {
+            if (!refreshing) {
+              e.currentTarget.style.background = 'var(--bg-elevated)'
+              e.currentTarget.style.color = 'var(--text-primary)'
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!refreshing) {
+              e.currentTarget.style.background = 'var(--bg-overlay)'
+              e.currentTarget.style.color = 'var(--text-secondary)'
+            }
+          }}
+        >
+          {refreshing ? '⏳ Scraping...' : '🔄 Refresh Data'}
+        </button>
+      </div>
       {/* GRID VIEW */}
       <div
         style={{
@@ -167,6 +228,7 @@ export default function SMGDashboardEmbed() {
           const osatBadge = getComparisonBadge(store.ranking_store_osat, store.ranking_pj_osat)
           const accuracyBadge = getComparisonBadge(store.ranking_store_accuracy_of_order, store.ranking_pj_accuracy_of_order)
           const waitTimeBadge = getComparisonBadge(store.ranking_store_wait_time, store.ranking_pj_wait_time)
+          const tasteBadge = getComparisonBadge(store.ranking_store_taste_of_food, store.ranking_pj_taste_of_food)
 
           return (
             <div
@@ -264,7 +326,7 @@ export default function SMGDashboardEmbed() {
                 </div>
 
                 {/* Wait Time */}
-                <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px', gridColumn: 'span 2' }}>
+                <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
                     WAIT TIME
                   </div>
@@ -273,6 +335,19 @@ export default function SMGDashboardEmbed() {
                   </div>
                   <div style={{ fontSize: 11, color: waitTimeBadge.color, fontFamily: "'Inter', sans-serif" }}>
                     {waitTimeBadge.text} vs PJ
+                  </div>
+                </div>
+
+                {/* Taste of Food */}
+                <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
+                    TASTE
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 4 }}>
+                    {formatNumber(store.ranking_store_taste_of_food)}
+                  </div>
+                  <div style={{ fontSize: 11, color: tasteBadge.color, fontFamily: "'Inter', sans-serif" }}>
+                    {tasteBadge.text} vs PJ
                   </div>
                 </div>
               </div>
