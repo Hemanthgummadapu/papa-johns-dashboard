@@ -16,6 +16,7 @@ import ComparisonPanel from '@/components/ComparisonPanel'
 import SingleStoreDateCompare from '@/components/SingleStoreDateCompare'
 import YearOverYearUploadPanel from '@/components/YearOverYearUploadPanel'
 import YearOverYearPanel from '@/components/YearOverYearPanel'
+import SMGDashboardEmbed from '@/components/SMGDashboardEmbed'
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1863,7 +1864,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* GUEST EXPERIENCE TAB - Temporarily Disabled */}
+        {/* GUEST EXPERIENCE TAB */}
         {!loading && activeTab === 'guest-experience' && (
           <div className="fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
@@ -1875,14 +1876,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 60, textAlign: 'center' }}>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 18, color: 'var(--text-primary)', marginBottom: 12 }}>
-                Guest Experience data is temporarily unavailable
-              </div>
-              <div style={{ fontSize: 14, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", lineHeight: 1.6 }}>
-                This feature has been temporarily disabled. Please check back later.
-              </div>
-            </div>
+            <SMGDashboardEmbed />
           </div>
         )}
 

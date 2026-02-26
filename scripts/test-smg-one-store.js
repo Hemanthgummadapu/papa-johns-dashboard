@@ -1,19 +1,15 @@
 import { chromium } from 'playwright';
 import { readFileSync } from 'fs';
 import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 const STORE_NUMBERS = ['002021', '002081', '002259', '002292', '002481', '003011'];
-
-// Initialize Supabase client if env vars are available
-function getSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) {
-    console.warn('⚠️  Supabase env vars not found - data will not be saved to DB');
-    return null;
-  }
-  return createClient(url, serviceKey);
-}
 
 // Check if page is already on Current Period
 async function isCurrentPeriod(page) {
@@ -402,6 +398,65 @@ async function saveToDatabase(supabase, storeId, scrapedData) {
   console.log(`✅ Data saved for store ${storeId}`);
 }
 
+async function saveToSupabase(storeId, data) {
+  const row = {
+    store_id: storeId,
+    period: 'current',
+    scraped_at: new Date().toISOString(),
+
+    focus_accuracy_current: data.focus?.accuracy_current ?? null,
+    focus_accuracy_vs_previous: data.focus?.accuracy_vs_previous ?? null,
+    focus_wait_time_current: data.focus?.wait_time_current ?? null,
+    focus_wait_time_vs_previous: data.focus?.wait_time_vs_previous ?? null,
+
+    osat_my_score: data.doing?.osat?.my_score ?? null,
+    osat_vs_last_period: data.doing?.osat?.vs_last_period ?? null,
+    osat_pj_score: data.doing?.osat?.pj_score ?? null,
+    osat_vs_pj: data.doing?.osat?.my_score_vs_pj ?? null,
+
+    accuracy_my_score: data.doing?.accuracy?.my_score ?? null,
+    accuracy_vs_last_period: data.doing?.accuracy?.vs_last_period ?? null,
+    accuracy_pj_score: data.doing?.accuracy?.pj_score ?? null,
+    accuracy_vs_pj: data.doing?.accuracy?.my_score_vs_pj ?? null,
+
+    csc_my_score: data.doing?.csc?.my_score ?? null,
+    csc_vs_last_period: data.doing?.csc?.vs_last_period ?? null,
+    csc_pj_score: data.doing?.csc?.pj_score ?? null,
+    csc_vs_pj: data.doing?.csc?.my_score_vs_pj ?? null,
+
+    comp_orders_my_score: data.doing?.comp_orders?.my_score ?? null,
+    comp_orders_vs_last_period: data.doing?.comp_orders?.vs_last_period ?? null,
+    comp_orders_pj_score: data.doing?.comp_orders?.pj_score ?? null,
+    comp_orders_vs_pj: data.doing?.comp_orders?.my_score_vs_pj ?? null,
+
+    comp_sales_my_score: data.doing?.comp_sales?.my_score ?? null,
+    comp_sales_vs_last_period: data.doing?.comp_sales?.vs_last_period ?? null,
+    comp_sales_pj_score: data.doing?.comp_sales?.pj_score ?? null,
+    comp_sales_vs_pj: data.doing?.comp_sales?.my_score_vs_pj ?? null,
+
+    ranking_store_responses: data.ranking?.store?.responses ?? null,
+    ranking_store_osat: data.ranking?.store?.osat ?? null,
+    ranking_store_taste_of_food: data.ranking?.store?.taste_of_food ?? null,
+    ranking_store_accuracy_of_order: data.ranking?.store?.accuracy_of_order ?? null,
+    ranking_store_wait_time: data.ranking?.store?.wait_time ?? null,
+    ranking_store_friendliness: data.ranking?.store?.friendliness_of_delivery_driver ?? null,
+
+    ranking_pj_responses: data.ranking?.papa_johns?.responses ?? null,
+    ranking_pj_osat: data.ranking?.papa_johns?.osat ?? null,
+    ranking_pj_taste_of_food: data.ranking?.papa_johns?.taste_of_food ?? null,
+    ranking_pj_accuracy_of_order: data.ranking?.papa_johns?.accuracy_of_order ?? null,
+    ranking_pj_wait_time: data.ranking?.papa_johns?.wait_time ?? null,
+    ranking_pj_friendliness: data.ranking?.papa_johns?.friendliness_of_delivery_driver ?? null,
+  };
+
+  const { error } = await supabase
+    .from('smg_scores')
+    .upsert(row, { onConflict: 'store_id,period' });
+
+  if (error) console.error(`❌ Supabase save failed for ${storeId}:`, error.message);
+  else console.log(`✅ Saved ${storeId} to Supabase`);
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: false });
 
@@ -562,6 +617,8 @@ async function saveToDatabase(supabase, storeId, scrapedData) {
 
       allData[storeId] = data;
       console.log(`✅ Scraped ${storeId}:`, JSON.stringify(data, null, 2));
+      
+      await saveToSupabase(storeId, data);
       
     } catch (error) {
       console.error(`❌ Error processing store ${storeId}:`, error.message);
