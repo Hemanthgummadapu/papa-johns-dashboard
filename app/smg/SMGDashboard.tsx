@@ -290,10 +290,10 @@ export default function SMGDashboard({ data, lastScraped }: SMGDashboardProps) {
               {selectedStoreData.focus_accuracy_vs_previous !== null && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
                   <div style={{ fontSize: '13px', color: '#6E6E73' }}>
-                    Previous: {formatNumber(selectedStoreData.focus_accuracy_vs_previous)}
+                    Vs. Previous: {formatNumber(selectedStoreData.focus_accuracy_vs_previous)}
                   </div>
                   {(() => {
-                    const diff = getFocusDifference(selectedStoreData.focus_accuracy_current, selectedStoreData.focus_accuracy_vs_previous)
+                    const diff = selectedStoreData.focus_accuracy_vs_previous
                     if (diff === null) return null
                     const isGood = diff > 0
                     return (
@@ -326,10 +326,10 @@ export default function SMGDashboard({ data, lastScraped }: SMGDashboardProps) {
               {selectedStoreData.focus_wait_time_vs_previous !== null && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
                   <div style={{ fontSize: '13px', color: '#6E6E73' }}>
-                    Previous: {formatNumber(selectedStoreData.focus_wait_time_vs_previous)}
+                    Vs. Previous: {formatNumber(selectedStoreData.focus_wait_time_vs_previous)}
                   </div>
                   {(() => {
-                    const diff = getFocusDifference(selectedStoreData.focus_wait_time_current, selectedStoreData.focus_wait_time_vs_previous)
+                    const diff = selectedStoreData.focus_wait_time_vs_previous
                     if (diff === null) return null
                     const isGood = diff > 0
                     return (

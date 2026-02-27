@@ -545,10 +545,8 @@ export default function SMGDashboardEmbed() {
                     </td>
                     <td style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                       {(() => {
-                        const current = selectedStoreData.focus_accuracy_current ?? 0
-                        const previous = selectedStoreData.focus_accuracy_vs_previous ?? 0
-                        if (previous === 0 && current === 0) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                        const diff = current - previous
+                        const diff = selectedStoreData.focus_accuracy_vs_previous
+                        if (diff === null || diff === undefined) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                         if (diff > 0) {
                           return <span style={{ color: 'var(--success-text)' }}>↑ +{diff.toFixed(1)}</span>
                         } else if (diff < 0) {
@@ -565,10 +563,8 @@ export default function SMGDashboardEmbed() {
                     </td>
                     <td style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                       {(() => {
-                        const current = selectedStoreData.focus_wait_time_current ?? 0
-                        const previous = selectedStoreData.focus_wait_time_vs_previous ?? 0
-                        if (previous === 0 && current === 0) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
-                        const diff = current - previous
+                        const diff = selectedStoreData.focus_wait_time_vs_previous
+                        if (diff === null || diff === undefined) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                         if (diff > 0) {
                           return <span style={{ color: 'var(--success-text)' }}>↑ +{diff.toFixed(1)}</span>
                         } else if (diff < 0) {

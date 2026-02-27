@@ -916,7 +916,7 @@ export default function DashboardPage() {
     date: string
     total_net_sales: number
     ly_net_sales: number
-    comp_pct: string | null
+    comp_pct: number | string | null
     online_net_sales?: number
     ly_online_net_sales?: number
     online_comp_pct?: string | null
@@ -981,28 +981,21 @@ export default function DashboardPage() {
     setLastUpdated(new Date().toLocaleString())
   }, [])
 
-  // Fetch live data function
+  // Fetch live data from Supabase (fast, instant)
   const fetchLiveData = async () => {
-    // If we already have data, this is a refresh - use isRefreshing
-    // If no data, this is initial load - use liveLoading
-    const hasExistingData = liveData.length > 0
-    
-    if (hasExistingData) {
-      setIsRefreshing(true)
-    } else {
-      setLiveLoading(true)
-    }
-    
+    setLiveLoading(true)
     setLiveError(null)
     try {
-      const res = await fetch('/api/scrape-extranet', { cache: 'no-store' })
+      const res = await fetch('/api/live-data', { cache: 'no-store' })
       const json = await res.json()
       if (!res.ok) {
         throw new Error(json.error || 'Failed to fetch live data')
       }
       if (json.success && json.data) {
         setLiveData(json.data)
-        setLiveLastUpdated(new Date())
+        if (json.lastScraped) {
+          setLiveLastUpdated(new Date(json.lastScraped))
+        }
         setRefreshCountdown(15 * 60) // Reset to 15 minutes
       } else {
         throw new Error('Invalid response format')
@@ -1011,11 +1004,32 @@ export default function DashboardPage() {
       setLiveError(error.message || 'Failed to fetch live data')
       console.error('Live data fetch error:', error)
     } finally {
-      if (hasExistingData) {
-        setIsRefreshing(false)
-      } else {
-        setLiveLoading(false)
-      }
+      setLiveLoading(false)
+    }
+  }
+
+  // Trigger background scrape (doesn't wait for result)
+  const triggerBackgroundScrape = async () => {
+    setIsRefreshing(true)
+    try {
+      // Fire and forget - don't wait for response
+      fetch('/api/scrape-extranet', { cache: 'no-store' })
+        .then(async (res) => {
+          const json = await res.json()
+          if (res.ok && json.success) {
+            // After scrape completes, refresh the data from Supabase
+            await fetchLiveData()
+          }
+        })
+        .catch((error) => {
+          console.error('Background scrape error:', error)
+        })
+        .finally(() => {
+          setIsRefreshing(false)
+        })
+    } catch (error: any) {
+      console.error('Error triggering background scrape:', error)
+      setIsRefreshing(false)
     }
   }
 
@@ -1047,10 +1061,10 @@ export default function DashboardPage() {
       })
     }, 1000)
 
-    // Auto-refresh every 15 minutes
+    // Auto-refresh every 15 minutes (trigger background scrape)
     const refreshInterval = setInterval(() => {
-      if (activeTab === 'live') {
-        void fetchLiveData()
+      if (activeTab === 'live' && liveData.length > 0) {
+        void triggerBackgroundScrape()
       }
     }, 15 * 60 * 1000)
 
@@ -1409,32 +1423,32 @@ export default function DashboardPage() {
                 )}
                 <button
                   onClick={() => void fetchLiveData()}
-                  disabled={liveLoading || isRefreshing}
+                  disabled={liveLoading}
                   style={{
                     padding: '8px 16px',
                     borderRadius: 8,
                     border: 'none',
-                    background: (liveLoading || isRefreshing) ? 'var(--bg-overlay)' : 'var(--brand)',
+                    background: liveLoading ? 'var(--bg-overlay)' : 'var(--brand)',
                     color: '#fff',
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                     fontWeight: 600,
                     letterSpacing: '0.04em',
-                    cursor: (liveLoading || isRefreshing) ? 'not-allowed' : 'pointer',
-                    opacity: (liveLoading || isRefreshing) ? 0.7 : 1,
+                    cursor: liveLoading ? 'not-allowed' : 'pointer',
+                    opacity: liveLoading ? 0.7 : 1,
                   }}
                   onMouseEnter={(e) => {
-                    if (!liveLoading && !isRefreshing) {
+                    if (!liveLoading) {
                       e.currentTarget.style.background = 'var(--brand-hover)'
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!liveLoading && !isRefreshing) {
+                    if (!liveLoading) {
                       e.currentTarget.style.background = 'var(--brand)'
                     }
                   }}
                 >
-                  {isRefreshing ? 'Refreshing...' : 'Refresh Now'}
+                  {liveLoading ? 'Loading...' : 'Refresh Now'}
                 </button>
               </div>
             </div>
@@ -1562,10 +1576,30 @@ export default function DashboardPage() {
                           {store.ly_net_sales > 0 && (
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
                               LY: ${store.ly_net_sales.toLocaleString()}
-                              {store.comp_pct && (
-                                <span style={{ color: store.comp_pct.startsWith('-') ? 'var(--danger-text)' : 'var(--success-text)', marginLeft: 4 }}>
-                                  {store.comp_pct}
-                                </span>
+                              {store.comp_pct !== null && store.comp_pct !== undefined && (
+                                (() => {
+                                  const raw = store.comp_pct
+                                  const numeric =
+                                    typeof raw === 'number'
+                                      ? raw
+                                      : parseFloat(String(raw).replace('%', '').replace('+', '').trim())
+                                  const isNegative = !Number.isNaN(numeric) && numeric < 0
+                                  const display =
+                                    typeof raw === 'number'
+                                      ? `${numeric > 0 ? '+' : ''}${numeric.toFixed(2)}%`
+                                      : String(raw)
+
+                                  return (
+                                    <span
+                                      style={{
+                                        color: isNegative ? 'var(--danger-text)' : 'var(--success-text)',
+                                        marginLeft: 4,
+                                      }}
+                                    >
+                                      {display}
+                                    </span>
+                                  )
+                                })()
                               )}
                             </div>
                           )}
@@ -1655,16 +1689,17 @@ export default function DashboardPage() {
                     padding: '8px 16px',
                     borderRadius: 8,
                     border: 'none',
-                    background: 'var(--brand)',
+                    background: liveLoading ? 'var(--bg-overlay)' : 'var(--brand)',
                     color: '#fff',
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
                     fontWeight: 600,
                     letterSpacing: '0.04em',
-                    cursor: 'pointer',
+                    cursor: liveLoading ? 'not-allowed' : 'pointer',
+                    opacity: liveLoading ? 0.7 : 1,
                   }}
                 >
-                  Fetch Data
+                  {liveLoading ? 'Loading...' : 'Fetch Data'}
                 </button>
               </div>
             )}
