@@ -1,3 +1,6 @@
+// OPS TOOL - manual session setup, not used by UI
+// This endpoint opens a browser for manual extranet login to create/update extranet-session.json
+// Used for initial setup or re-authentication when session expires
 import { chromium } from 'playwright';
 
 export async function GET() {

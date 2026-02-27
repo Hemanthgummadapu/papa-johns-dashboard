@@ -19,31 +19,6 @@ interface SMGCommentsProps {
 
 const STORES = ['All', '002021', '002081', '002259', '002292', '002481', '003011']
 
-// Helper function to check if text looks like CSS/HTML code (client-side backup filter)
-function isCSSOrHTMLCode(text: string | null): boolean {
-  if (!text) return false
-  const cssHtmlPatterns = [
-    /\{/,
-    /color\s*:/,
-    /!important/,
-    /--green/,
-    /--[a-z-]+:/,
-    /background\s*:/,
-    /font-size\s*:/,
-    /margin\s*:/,
-    /padding\s*:/,
-    /<style/,
-    /<\/style>/,
-    /\.css/,
-    /#[0-9a-fA-F]{3,6}/,
-    /rgba?\(/,
-    /@media/,
-    /@keyframes/,
-  ]
-  
-  return cssHtmlPatterns.some(pattern => pattern.test(text))
-}
-
 export default function SMGComments({ comments: initialComments = [] }: SMGCommentsProps) {
   const [selectedStore, setSelectedStore] = useState<string>('All')
   const [comments, setComments] = useState<SMGComment[]>(initialComments || [])
@@ -59,18 +34,12 @@ export default function SMGComments({ comments: initialComments = [] }: SMGComme
           const json = await res.json()
           const fetchedComments = json.data || []
           
-          // Client-side backup filter: remove CSS/HTML code and empty comments
+          // Filter out empty comments (API already filters CSS/HTML code)
           const filtered = fetchedComments.filter((comment: SMGComment) => {
             // Skip if no comment text or empty
             if (!comment.comment_text || comment.comment_text.trim().length === 0) {
               return false
             }
-            
-            // Skip if looks like CSS/HTML code
-            if (isCSSOrHTMLCode(comment.comment_text)) {
-              return false
-            }
-            
             return true
           })
           

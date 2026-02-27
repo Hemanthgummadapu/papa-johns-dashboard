@@ -981,10 +981,27 @@ export default function DashboardPage() {
     setLastUpdated(new Date().toLocaleString())
   }, [])
 
+  // Calculate countdown based on lastScraped timestamp
+  const calculateCountdown = (lastScraped: string | null): number => {
+    if (!lastScraped) return 0
+    
+    const lastScrapedTime = new Date(lastScraped).getTime()
+    const nextScrapeTime = lastScrapedTime + (15 * 60 * 1000) // 15 minutes in milliseconds
+    const now = Date.now()
+    const timeRemaining = Math.max(0, Math.floor((nextScrapeTime - now) / 1000))
+    
+    return timeRemaining
+  }
+
   // Fetch live data from Supabase (fast, instant)
   const fetchLiveData = async () => {
-    setLiveLoading(true)
+    // Only show loading spinner on first load (when no data exists)
+    const isFirstLoad = liveData.length === 0
+    if (isFirstLoad) {
+      setLiveLoading(true)
+    }
     setLiveError(null)
+    
     try {
       const res = await fetch('/api/live-data', { cache: 'no-store' })
       const json = await res.json()
@@ -994,9 +1011,17 @@ export default function DashboardPage() {
       if (json.success && json.data) {
         setLiveData(json.data)
         if (json.lastScraped) {
-          setLiveLastUpdated(new Date(json.lastScraped))
+          const newLastScraped = new Date(json.lastScraped)
+          // Only update "Last updated" if timestamp actually changed (newer data)
+          if (!liveLastUpdated || newLastScraped.getTime() > liveLastUpdated.getTime()) {
+            setLiveLastUpdated(newLastScraped)
+          }
+          // Calculate countdown based on actual scraped_at timestamp
+          const countdown = calculateCountdown(json.lastScraped)
+          setRefreshCountdown(countdown)
+        } else {
+          setRefreshCountdown(0)
         }
-        setRefreshCountdown(15 * 60) // Reset to 15 minutes
       } else {
         throw new Error('Invalid response format')
       }
@@ -1004,31 +1029,37 @@ export default function DashboardPage() {
       setLiveError(error.message || 'Failed to fetch live data')
       console.error('Live data fetch error:', error)
     } finally {
-      setLiveLoading(false)
+      if (isFirstLoad) {
+        setLiveLoading(false)
+      }
     }
   }
 
-  // Trigger background scrape (doesn't wait for result)
-  const triggerBackgroundScrape = async () => {
+  // Trigger live scrape and refresh data
+  const triggerLiveScrape = async () => {
     setIsRefreshing(true)
+    setLiveError(null)
     try {
-      // Fire and forget - don't wait for response
-      fetch('/api/scrape-extranet', { cache: 'no-store' })
-        .then(async (res) => {
-          const json = await res.json()
-          if (res.ok && json.success) {
-            // After scrape completes, refresh the data from Supabase
-            await fetchLiveData()
-          }
-        })
-        .catch((error) => {
-          console.error('Background scrape error:', error)
-        })
-        .finally(() => {
-          setIsRefreshing(false)
-        })
+      // Call the scrape endpoint
+      const res = await fetch('/api/scrape-live', {
+        method: 'POST',
+        cache: 'no-store'
+      })
+      const json = await res.json()
+      
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to trigger scrape')
+      }
+      
+      // After scrape completes, refresh data from DB
+      await fetchLiveData()
+      
+      // Reset countdown to 15 minutes after successful scrape
+      setRefreshCountdown(15 * 60)
     } catch (error: any) {
-      console.error('Error triggering background scrape:', error)
+      setLiveError(error.message || 'Failed to scrape live data')
+      console.error('Live scrape error:', error)
+    } finally {
       setIsRefreshing(false)
     }
   }
@@ -1038,7 +1069,7 @@ export default function DashboardPage() {
   //   // Disabled
   // }
 
-  // Auto-refresh countdown timer
+  // Auto-refresh countdown timer and periodic data refresh
   useEffect(() => {
     if (activeTab !== 'live') {
       // Clear countdown when switching away
@@ -1051,29 +1082,50 @@ export default function DashboardPage() {
       void fetchLiveData()
     }
 
-    // Countdown timer
+    // Calculate initial countdown from lastScraped if available
+    // This ensures countdown is set even if data was already loaded
+    if (liveLastUpdated) {
+      const countdown = calculateCountdown(liveLastUpdated.toISOString())
+      setRefreshCountdown(countdown)
+    } else if (liveData.length > 0) {
+      // If we have data but no lastScraped, show 0 (Due now)
+      setRefreshCountdown(0)
+    }
+
+    // Countdown timer - updates every second and triggers refresh when it crosses 0
     const countdownInterval = setInterval(() => {
-      setRefreshCountdown((prev) => {
-        if (prev <= 1) {
-          return 0
-        }
-        return prev - 1
-      })
+      if (liveLastUpdated) {
+        setRefreshCountdown((prev) => {
+          const newCountdown = calculateCountdown(liveLastUpdated.toISOString())
+
+          // When we transition from >0 to <=0, trigger an immediate refresh
+          if (prev > 0 && newCountdown <= 0) {
+            console.log('[Live] Countdown reached 0, auto-refreshing data...')
+            void fetchLiveData()
+          }
+
+          return newCountdown
+        })
+      } else {
+        // If no lastScraped, show 0 (Due now)
+        setRefreshCountdown(0)
+      }
     }, 1000)
 
-    // Auto-refresh every 15 minutes (trigger background scrape)
-    const refreshInterval = setInterval(() => {
-      if (activeTab === 'live' && liveData.length > 0) {
-        void triggerBackgroundScrape()
+    // Set up a 15-minute polling interval to auto-refresh data (backup)
+    const autoRefreshInterval = setInterval(() => {
+      if (activeTab === 'live') {
+        console.log('[Live] 15-minute auto-poll triggered')
+        void fetchLiveData()
       }
-    }, 15 * 60 * 1000)
+    }, 15 * 60 * 1000) // 15 minutes
 
     return () => {
       clearInterval(countdownInterval)
-      clearInterval(refreshInterval)
+      clearInterval(autoRefreshInterval)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab])
+  }, [activeTab, liveLastUpdated])
 
   // SMG Guest Experience is temporarily disabled
   // useEffect(() => {
@@ -1410,9 +1462,9 @@ export default function DashboardPage() {
                     Last updated: {liveLastUpdated.toLocaleTimeString()}
                   </div>
                 )}
-                {refreshCountdown > 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: "'JetBrains Mono', monospace" }}>
-                    Next refresh in {formatCountdown(refreshCountdown)}
+                {liveLastUpdated && (
+                  <div style={{ fontSize: 12, color: refreshCountdown > 0 ? 'var(--text-secondary)' : 'var(--info-text)', fontFamily: "'JetBrains Mono', monospace" }}>
+                    {refreshCountdown > 0 ? `Next refresh in ${formatCountdown(refreshCountdown)}` : 'Next refresh: Due now'}
                   </div>
                 )}
                 {isRefreshing && (
