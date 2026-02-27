@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+// Disable all caching for this route
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET() {
   try {
     // Verify environment variables
@@ -17,7 +21,13 @@ export async function GET() {
       });
       return NextResponse.json(
         { success: false, error: 'Missing Supabase configuration', data: [] },
-        { status: 500 }
+        { 
+          status: 500,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Pragma': 'no-cache'
+          }
+        }
       );
     }
 
@@ -28,33 +38,28 @@ export async function GET() {
     });
 
     // Get the most recent data for each store from live_kpi
-    // Query all records ordered by scraped_at DESC, then group by store_number
-    console.log('[live-data API] Executing Supabase query on live_kpi...');
     const { data, error: queryError } = await supabase
       .from('live_kpi')
       .select('*')
-      .order('scraped_at', { ascending: false });
+      .order('scraped_at', { ascending: false })
+      .limit(100);
 
-    console.log('[live-data] query error detail:', JSON.stringify(queryError));
-    console.log('[live-data] data:', JSON.stringify(data));
+    // Debug logs
+    console.log('[live-data] newest record:', data?.[0]?.scraped_at, data?.[0]?.store_number);
+    console.log('[live-data] total records:', data?.length);
     
     if (queryError) {
       console.error('[live-data API] Query error:', queryError);
-      console.error('[live-data API] Error code:', queryError.code);
-      console.error('[live-data API] Error message:', queryError.message);
       return NextResponse.json(
         { success: false, error: queryError.message, data: [] },
-        { status: 500 }
+        { 
+          status: 500,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Pragma': 'no-cache'
+          }
+        }
       );
-    }
-    
-    console.log('[live-data API] Raw data from Supabase:');
-    console.log(`  - Type: ${typeof data}`);
-    console.log(`  - Is Array: ${Array.isArray(data)}`);
-    console.log(`  - Length: ${data?.length || 0}`);
-    if (data && data.length > 0) {
-      console.log(`  - First record: store_number=${data[0].store_number}, scraped_at=${data[0].scraped_at}`);
-      console.log(`  - Sample record keys:`, Object.keys(data[0]));
     }
     
     if (!data || !Array.isArray(data) || data.length === 0) {
@@ -63,12 +68,15 @@ export async function GET() {
         success: true,
         data: [],
         lastScraped: null
+      }, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Pragma': 'no-cache'
+        }
       });
     }
     
-    // Get latest record per store using Map
-    // Data is already ordered by scraped_at DESC, so first occurrence = most recent
-    console.log('[live-data API] Grouping records by store_number...');
+    // Get latest per store - data is DESC so first occurrence = most recent
     const storeMap = new Map();
     for (const record of data) {
       if (!storeMap.has(record.store_number)) {
@@ -76,10 +84,8 @@ export async function GET() {
       }
     }
     const latestPerStore = Array.from(storeMap.values());
-    console.log(`[live-data API] Grouped into ${latestPerStore.length} unique stores`);
     
     // Format and return
-    console.log('[live-data API] Formatting data...');
     const formattedData = latestPerStore.map(record => ({
       store_number: record.store_number,
       date: record.date,
@@ -110,27 +116,27 @@ export async function GET() {
     const lastScraped = latestPerStore.reduce((latest, r) => 
       r.scraped_at > latest ? r.scraped_at : latest, '');
     
-    console.log('[live-data API] Final response:');
-    console.log(`  - formattedData length: ${formattedData.length}`);
-    console.log(`  - lastScraped: ${lastScraped}`);
-    if (formattedData.length > 0) {
-      console.log(`  - First formatted record:`, {
-        store_number: formattedData[0].store_number,
-        scraped_at: formattedData[0].scraped_at,
-        total_net_sales: formattedData[0].total_net_sales
-      });
-    }
-    
     return NextResponse.json({
       success: true,
       data: formattedData,
       lastScraped: lastScraped || null
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache'
+      }
     });
   } catch (error: any) {
     console.error('Error in live-data API:', error);
     return NextResponse.json(
       { success: false, error: error.message, data: [] },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      }
     );
   }
 }
