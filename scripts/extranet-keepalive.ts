@@ -10,10 +10,8 @@ async function keepAlive() {
     process.exit(1);
   }
 
-  const sessionData = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8'));
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
-  await context.addCookies(sessionData.cookies);
+  const context = await browser.newContext({ storageState: SESSION_FILE });
   const page = await context.newPage();
 
   try {
@@ -29,10 +27,7 @@ async function keepAlive() {
       process.exit(1);
     }
 
-    // Save refreshed cookies back to keep them fresh
-    const cookies = await context.cookies();
-    const allCookies = { ...sessionData, cookies };
-    fs.writeFileSync(SESSION_FILE, JSON.stringify(allCookies, null, 2));
+    await context.storageState({ path: SESSION_FILE });
     console.log(`✅ Extranet session alive and refreshed at ${new Date().toISOString()}`);
   } catch (err) {
     console.error('❌ Keepalive failed:', err);
@@ -41,7 +36,4 @@ async function keepAlive() {
     await browser.close();
   }
 }
-
-keepAlive().catch(console.error);
-
 

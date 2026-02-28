@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { readFileSync, existsSync } from 'fs';
+import { existsSync } from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
@@ -463,19 +463,10 @@ async function saveToSupabase(storeId, data) {
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
   });
 
-  // Load saved cookies but start with clean storage (no remembered store/date state)
-  const context = await browser.newContext({
-    storageState: undefined  // don't load any saved storage state
-  });
-
-  // Add only the cookies (login session), not localStorage/sessionStorage
   if (!existsSync('./smg-session.json')) {
-    throw new Error('smg-session.json not found. Please run smg-auto-session.ts first to refresh the session.');
+    throw new Error('smg-session.json not found. Run "npm run smg:reauth" to re-authenticate.');
   }
-  const session = JSON.parse(readFileSync('./smg-session.json', 'utf8'));
-  const cookies = session.cookies || session;
-  await context.addCookies(cookies);
-
+  const context = await browser.newContext({ storageState: 'smg-session.json' });
   const page = await context.newPage();
 
   // Stub NREUM before page loads to prevent tracking errors

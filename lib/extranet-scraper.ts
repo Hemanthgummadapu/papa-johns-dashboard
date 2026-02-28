@@ -1,5 +1,9 @@
 import { chromium } from 'playwright';
 import { existsSync, unlinkSync } from 'fs';
+import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+
+dotenv.config({ path: '.env.local' });
 
 const STORE_IDS = ['2021', '2081', '2259', '2292', '2481', '3011'];
 const SESSION_FILE = './extranet-session.json';
@@ -135,29 +139,48 @@ export async function scrapeExtranet() {
 
     for (const storeId of STORE_IDS) {
       console.log(`=== Scraping store ${storeId}... ===`);
-      
+
       await page.goto(
         `https://extranet.papajohns.com/kpi/#/realtime?type=STORE_ID&id=${storeId}&view=summary`,
         { waitUntil: 'domcontentloaded', timeout: 30000 }
       );
       await page.waitForTimeout(5000);
-      
-      // Check if redirected to microsoftonline (session invalid)
+
       const currentUrl = page.url();
       console.log(`Current URL for store ${storeId}: ${currentUrl}`);
-      
-      if (currentUrl.includes('microsoftonline')) {
-        throw new Error(`Session expired while scraping store ${storeId}. Redirected to Microsoft login.`);
+
+      if (currentUrl.includes('login.microsoftonline.com')) {
+        console.log('=== Session expired, deleting session file ===');
+        if (existsSync(SESSION_FILE)) {
+          unlinkSync(SESSION_FILE);
+        }
+        
+        // Save status to Supabase
+        try {
+          const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+          );
+          await supabase.from('scraper_status').update({
+            last_error_at: new Date().toISOString(),
+            last_error_message: 'Microsoft session expired',
+            session_expired: true,
+            updated_at: new Date().toISOString()
+          }).eq('id', 'live_kpi');
+        } catch (statusError) {
+          console.error('Failed to update scraper status:', statusError);
+        }
+        
+        throw new Error('SESSION_EXPIRED');
       }
-      
+
       const pageText = await page.evaluate(() => document.body.innerText);
-      
-      // Print full page text for store 2081
+
       if (storeId === '2081') {
         console.log(`=== Store ${storeId} full page text ===`);
         console.log(pageText);
       }
-      
+
       const parsed = parseStoreData(storeId, pageText);
       storeData.push(parsed);
       console.log(`✓ Store ${storeId} scraped successfully`);
@@ -169,4 +192,3 @@ export async function scrapeExtranet() {
     await browser.close();
   }
 }
-

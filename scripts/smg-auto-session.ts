@@ -1,6 +1,10 @@
 import { chromium } from 'playwright';
-import { existsSync } from 'fs';
+import { existsSync, unlinkSync } from 'fs';
 import path from 'path';
+import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+
+dotenv.config({ path: '.env.local' });
 
 const EXTRANET_SESSION_FILE = path.join(process.cwd(), 'extranet-session.json');
 const SMG_SESSION_FILE = path.join(process.cwd(), 'smg-session.json');
@@ -131,7 +135,41 @@ async function refreshSMGSession() {
 
     // Wait for SMG to load (SSO redirect)
     console.log('=== Waiting for reporting.smg.com to load ===');
-    await page.waitForURL('**/reporting.smg.com/**', { timeout: 120000 }); // 2 minute timeout
+    try {
+      await page.waitForURL('**/reporting.smg.com/**', { timeout: 120000 }); // 2 minute timeout
+    } catch (e) {
+      const currentUrl = page.url();
+      if (currentUrl.includes('login.microsoftonline.com')) {
+        console.error('❌ SMG SESSION EXPIRED - Microsoft login required');
+        if (existsSync(EXTRANET_SESSION_FILE)) {
+          unlinkSync(EXTRANET_SESSION_FILE);
+          console.log('Deleted extranet-session.json');
+        }
+        if (existsSync(SMG_SESSION_FILE)) {
+          unlinkSync(SMG_SESSION_FILE);
+          console.log('Deleted smg-session.json');
+        }
+        
+        // Save status to Supabase
+        try {
+          const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+          );
+          await supabase.from('scraper_status').update({
+            last_error_at: new Date().toISOString(),
+            last_error_message: 'Microsoft session expired',
+            session_expired: true,
+            updated_at: new Date().toISOString()
+          }).eq('id', 'smg');
+        } catch (statusError) {
+          console.error('Failed to update scraper status:', statusError);
+        }
+        
+        throw new Error('SMG_SESSION_EXPIRED');
+      }
+      throw e;
+    }
     await page.waitForTimeout(3000);
 
     // Verify we're on SMG dashboard
@@ -146,9 +184,44 @@ async function refreshSMGSession() {
     await context.storageState({ path: SMG_SESSION_FILE });
     console.log(`✅ SMG session refreshed automatically`);
     console.log(`=== Session saved to ${SMG_SESSION_FILE} ===`);
+    
+    // Update scraper status on success
+    try {
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+      await supabase.from('scraper_status').update({
+        last_success_at: new Date().toISOString(),
+        last_error_message: null,
+        session_expired: false,
+        updated_at: new Date().toISOString()
+      }).eq('id', 'smg');
+    } catch (statusError) {
+      console.error('Failed to update scraper status:', statusError);
+    }
 
   } catch (error: any) {
     console.error('Error refreshing SMG session:', error.message);
+    
+    // Update scraper status on error (if not already SMG_SESSION_EXPIRED)
+    if (!error.message.includes('SMG_SESSION_EXPIRED')) {
+      try {
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+        await supabase.from('scraper_status').update({
+          last_error_at: new Date().toISOString(),
+          last_error_message: error.message || 'SMG session refresh failed',
+          session_expired: false,
+          updated_at: new Date().toISOString()
+        }).eq('id', 'smg');
+      } catch (statusError) {
+        console.error('Failed to update scraper status:', statusError);
+      }
+    }
+    
     throw error;
   } finally {
     await browser.close();

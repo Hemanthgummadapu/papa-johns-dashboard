@@ -155,6 +155,12 @@ See `.env.local.example` for required variables:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Public anon key
 - `SUPABASE_SERVICE_ROLE_KEY` - Service role key (server-side only)
 
+## Live Data Scraping (Extranet)
+
+The Live page scrapes KPI data from the Papa Johns extranet every 15 minutes via cron. When the Microsoft session expires, the scraper deletes `extranet-session.json` and throws `SESSION_EXPIRED` (visible in `logs/live-data.log`).
+
+**Microsoft MFA is required once after session expiry.** Run with `headless: false` in `lib/extranet-scraper.ts` to complete MFA manually, then switch back to headless. Once headless works with the saved session, cron runs cleanly until Microsoft invalidates the session again (usually days to weeks). When it expires, the Live page shows a red "⚠ STALE" badge — re-run with headless to re-authenticate.
+
 ## Development
 
 ```bash
@@ -172,6 +178,12 @@ npm run lint
 
 # Seed database
 npm run seed
+```
+
+## License
+
+MIT
+
 ```
 
 ## License

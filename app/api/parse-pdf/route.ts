@@ -287,8 +287,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ...metrics,
-      data: memoryReport,
       ...result,
+      data: memoryReport,
       storage: 'memory',
       period: periodLabel,
       savedTo: {

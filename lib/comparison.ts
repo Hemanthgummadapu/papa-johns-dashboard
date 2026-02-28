@@ -191,8 +191,8 @@ export function getDateComparisonData(
       food_cost_pct: current.food_cost_pct * 1.05,
       flm_pct: current.flm_pct * 1.05,
       cash_short: current.cash_short * 1.1,
-      doordash_sales: current.doordash_sales * 0.9,
-      ubereats_sales: current.ubereats_sales * 0.9,
+      doordash_sales: (current.doordash_sales ?? 0) * 0.9,
+      ubereats_sales: (current.ubereats_sales ?? 0) * 0.9,
     }
     currentPeriod = reports.slice(-7)
     previousPeriod = [previous]
