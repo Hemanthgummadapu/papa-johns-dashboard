@@ -1,9 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -18,6 +22,10 @@ import YearOverYearUploadPanel from '@/components/YearOverYearUploadPanel'
 import YearOverYearPanel from '@/components/YearOverYearPanel'
 import SMGDashboardEmbed from '@/components/SMGDashboardEmbed'
 
+
+function roundPct(v: number): number {
+  return Math.round(v * 10) / 10
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type MetricKey = 'net_sales' | 'labor_pct' | 'food_cost_pct' | 'flm_pct' | 'cash_short' | 'doordash_sales' | 'ubereats_sales'
@@ -39,6 +47,8 @@ type ReportPoint = {
   cash_short: number
   doordash_sales?: number
   ubereats_sales?: number
+  food_cost_usd?: number
+  comp_pct?: number
 }
 
 type ReportsByStore = Record<string, ReportPoint[]>
@@ -70,6 +80,8 @@ const TARGETS: Partial<Record<MetricKey, number>> = {
   flm_pct: 55.11,
   cash_short: 50,
   net_sales: 3000, // projected (MVP default)
+  doordash_sales: 5000, // dollar target
+  ubereats_sales: 4000, // dollar target
 }
 
 const METRICS: Array<{
@@ -78,65 +90,27 @@ const METRICS: Array<{
   fmt: (v: number) => string
   color: string
   unit: '$' | '%'
+  tooltip?: string
 }> = [
   { key: 'net_sales', label: 'Net Sales', fmt: (v) => `$${v?.toLocaleString()}`, color: '#3b82f6', unit: '$' },
   { key: 'labor_pct', label: 'Labor %', fmt: (v) => `${v}%`, color: '#f59e0b', unit: '%' },
   { key: 'food_cost_pct', label: 'Food Cost %', fmt: (v) => `${v}%`, color: '#8b5cf6', unit: '%' },
   { key: 'flm_pct', label: 'FLM %', fmt: (v) => `${v}%`, color: '#ec4899', unit: '%' },
   { key: 'cash_short', label: 'Cash Short/Over', fmt: (v) => (v >= 0 ? `+$${v}` : `-$${Math.abs(v)}`), color: '#14b8a6', unit: '$' },
-  { key: 'doordash_sales', label: 'DoorDash Sales', fmt: (v) => `$${v?.toLocaleString()}`, color: '#f97316', unit: '$' },
-  { key: 'ubereats_sales', label: 'Uber Eats Sales', fmt: (v) => `$${v?.toLocaleString()}`, color: '#06b6d4', unit: '$' },
+  { key: 'doordash_sales', label: 'DoorDash (DDD)', fmt: (v) => `$${v?.toLocaleString()}`, color: '#f97316', unit: '$' },
+  { key: 'ubereats_sales', label: '3rd Party (DD+UE+GrubHub)', fmt: (v) => `$${v?.toLocaleString()}`, color: '#06b6d4', unit: '$', tooltip: 'Includes DoorDash, Uber Eats, and GrubHub combined. Cube does not provide separate UE/GrubHub breakdown.' },
 ]
 
 const STORE_COLORS = ['var(--store-1)', 'var(--store-2)', 'var(--store-3)', 'var(--store-4)', 'var(--store-5)', 'var(--store-6)']
 
-// ── Seed Data ────────────────────────────────────────────────────────────────
-const SEED_STORES = [
-  { id: '1', number: '2081', name: 'Store 2081', location: 'Burbank' },
-  { id: '2', number: '2292', name: 'Store 2292', location: 'Glendale' },
-  { id: '3', number: '3011', name: 'Store 3011', location: 'Pasadena' },
-  { id: '4', number: '3102', name: 'Store 3102', location: 'Van Nuys' },
-  { id: '5', number: '3245', name: 'Store 3245', location: 'Northridge' },
-  { id: '6', number: '3389', name: 'Store 3389', location: 'Chatsworth' },
+const DEFAULT_STORES: StoreUI[] = [
+  { id: '1', number: '2081', name: 'Store 2081', location: 'Westhills' },
+  { id: '2', number: '2021', name: 'Store 2021', location: 'Tapo' },
+  { id: '3', number: '2259', name: 'Store 2259', location: 'Northridge' },
+  { id: '4', number: '2292', name: 'Store 2292', location: 'Canoga' },
+  { id: '5', number: '2481', name: 'Store 2481', location: 'Madera' },
+  { id: '6', number: '3011', name: 'Store 3011', location: 'Chattsworth' },
 ]
-
-function generateSeedReports(): DailyReportWithStore[] {
-  const reports: DailyReportWithStore[] = []
-  const today = new Date()
-  
-  // Generate 5 weeks of data (35 days)
-  for (let dayOffset = 34; dayOffset >= 0; dayOffset--) {
-    const reportDate = new Date(today)
-    reportDate.setDate(reportDate.getDate() - dayOffset)
-    const dateStr = reportDate.toISOString().split('T')[0]
-    
-    for (const store of SEED_STORES) {
-      reports.push({
-        id: `seed-${store.number}-${dateStr}`,
-        store_id: store.id,
-        report_date: dateStr,
-        net_sales: Math.round((55000 + Math.random() * 20000) * 100) / 100,
-        labor_pct: Math.round((24 + Math.random() * 7) * 100) / 100,
-        food_cost_pct: Math.round((24 + Math.random() * 6) * 100) / 100,
-        flm_pct: Math.round((50 + Math.random() * 8) * 100) / 100,
-        cash_short: Math.round((Math.random() * 450 - 50) * 100) / 100,
-        doordash_sales: Math.round((4000 + Math.random() * 3000) * 100) / 100,
-        ubereats_sales: Math.round((3000 + Math.random() * 3000) * 100) / 100,
-        raw_pdf_url: null,
-        created_at: new Date().toISOString(),
-        stores: {
-          id: store.id,
-          store_number: Number(store.number),
-          name: store.name,
-          location: store.location,
-          created_at: new Date().toISOString(),
-        },
-      } as DailyReportWithStore)
-    }
-  }
-  
-  return reports
-}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function safeNum(v: unknown): number {
@@ -145,14 +119,31 @@ function safeNum(v: unknown): number {
 }
 
 function isGood(key: MetricKey, value: number) {
-  if (key === 'net_sales') return value >= TARGETS.net_sales
-  if (key === 'cash_short') return Math.abs(value) < TARGETS.cash_short
-  return value < TARGETS[key]
+  if (key === 'net_sales') return value >= (TARGETS.net_sales ?? 0)
+  if (key === 'cash_short') return Math.abs(value) < (TARGETS.cash_short ?? 0)
+  if (key === 'doordash_sales' || key === 'ubereats_sales') return value >= (TARGETS[key] ?? 0)
+  return value < (TARGETS[key] ?? Infinity)
 }
 
 function formatDateShort(iso: string) {
   const d = new Date(iso)
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function formatCubeDateLabel(dateStr: string, period: CubePeriod): string {
+  if (period === 'yearly') return dateStr
+  if (period === 'monthly' && /^\d{4}-\d{2}$/.test(dateStr)) {
+    const [y, m] = dateStr.split('-')
+    const d = new Date(parseInt(y), parseInt(m) - 1)
+    return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  }
+  if (period === 'weekly' && /^\d{4}-W\d{1,2}$/.test(dateStr)) {
+    const [, w] = dateStr.split('-W')
+    const y = dateStr.slice(0, 4)
+    return `Week ${parseInt(w)}, ${y}`
+  }
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function monthLabel(iso: string) {
@@ -520,7 +511,14 @@ function KpiCard({
           <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>
             {store.name}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>{store.location}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
+            {store.location}
+            {(latest as any).comp_pct != null && (
+              <span style={{ marginLeft: 8, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: (latest as any).comp_pct >= 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>
+                Comp: {(latest as any).comp_pct >= 0 ? '+' : ''}{(latest as any).comp_pct}%
+              </span>
+            )}
+          </div>
         </div>
         <div
           style={{
@@ -543,12 +541,19 @@ function KpiCard({
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {METRICS.map((m) => {
-          const val = safeNum((latest as any)[m.key])
-          const good = isGood(m.key, val)
+          const isFoodCost = m.key === 'food_cost_pct'
+          const val = isFoodCost && (latest as any).food_cost_usd != null
+            ? safeNum((latest as any).food_cost_usd)
+            : safeNum((latest as any)[m.key])
+          const displayVal = isFoodCost && (latest as any).food_cost_usd != null
+            ? `$${val?.toLocaleString()}`
+            : m.fmt(val)
+          const good = isGood(m.key, isFoodCost ? safeNum((latest as any).food_cost_pct) : val)
+          const label = isFoodCost && (latest as any).food_cost_usd != null ? 'FOOD COST' : m.label.toUpperCase()
           return (
             <div key={m.key} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                {m.label.toUpperCase()}
+                {label}
               </div>
               <div
                 style={{
@@ -558,7 +563,7 @@ function KpiCard({
                   color: good ? 'var(--success-text)' : 'var(--danger-text)',
                 }}
               >
-                {m.fmt(val)}
+                {displayVal}
               </div>
             </div>
           )
@@ -682,10 +687,10 @@ function ChartSection({
           >
             TARGET:{' '}
             {metric.key === 'net_sales'
-              ? `$${TARGETS[metric.key].toLocaleString()}`
+              ? `$${TARGETS[metric.key]?.toLocaleString() ?? '0'}`
               : metric.key === 'cash_short'
-                ? `< $${TARGETS[metric.key]}`
-                : `< ${TARGETS[metric.key]}${metric.unit}`}
+                ? `< $${TARGETS[metric.key] ?? '0'}`
+                : `< ${TARGETS[metric.key] ?? '0'}${metric.unit}`}
           </div>
         )}
       </div>
@@ -843,28 +848,153 @@ async function fetchReports(days: number): Promise<{ data: DailyReportWithStore[
   try {
     const res = await fetch(`/api/daily-reports?days=${encodeURIComponent(String(days))}`, { cache: 'no-store' })
     if (!res.ok) {
-      // Fallback to seed data on API error
-      return { data: generateSeedReports(), isRealData: false }
+      return { data: [], isRealData: false }
     }
     const data = await res.json()
-    // If API returns empty array, fallback to seed data
-    if (!Array.isArray(data) || data.length === 0) {
-      return { data: generateSeedReports(), isRealData: false }
+    if (!Array.isArray(data)) {
+      return { data: [], isRealData: false }
     }
-    return { data, isRealData: true }
+    return { data, isRealData: data.length > 0 }
   } catch (error) {
-    // Fallback to seed data on fetch error
-    console.warn('Failed to fetch from API, using seed data:', error)
-    return { data: generateSeedReports(), isRealData: false }
+    console.warn('Failed to fetch from API:', error)
+    return { data: [], isRealData: false }
+  }
+}
+
+function getYesterdayDate(): string {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  return d.toISOString().split('T')[0]
+}
+
+function getDefaultWeek(): string {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7))
+  const jan1 = new Date(d.getFullYear(), 0, 1)
+  const w = Math.ceil((((d.getTime() - jan1.getTime()) / 86400000) + jan1.getDay() + 1) / 7)
+  return `${d.getFullYear()}-W${String(w).padStart(2, '0')}`
+}
+
+function getDefaultMonth(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function getPrevWeeks(current: string, n: number): string[] {
+  const [year, weekStr] = current.split('-W')
+  const results: string[] = []
+  let y = parseInt(year, 10)
+  let w = parseInt(weekStr, 10)
+  for (let i = 0; i < n; i++) {
+    results.push(`${y}-W${String(w).padStart(2, '0')}`)
+    w--
+    if (w < 1) {
+      w = 52
+      y--
+    }
+  }
+  return results.reverse()
+}
+
+function getPrevMonths(current: string, n: number): string[] {
+  const [y, m] = current.split('-').map(Number)
+  const results: string[] = []
+  let year = y
+  let month = m
+  for (let i = 0; i < n; i++) {
+    results.push(`${year}-${String(month).padStart(2, '0')}`)
+    month--
+    if (month < 1) {
+      month = 12
+      year--
+    }
+  }
+  return results.reverse()
+}
+
+type CubePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly'
+
+function formatDateForApi(dateStr: string, period: CubePeriod): string {
+  if (period === 'yearly') return /^\d{4}$/.test(dateStr) ? dateStr : String(new Date().getFullYear())
+  if (period === 'monthly') return /^\d{4}-\d{2}$/.test(dateStr) ? dateStr : new Date().toISOString().slice(0, 7)
+  if (period === 'weekly') {
+    const m = dateStr.match(/^(\d{4})-W(\d{1,2})$/)
+    if (m) return `${m[1]}-W${m[2].padStart(2, '0')}`
+    return getDefaultWeek()
+  }
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : getYesterdayDate()
+}
+
+async function fetchCubeData(date: string, period: CubePeriod): Promise<{ data: DailyReportWithStore[]; isRealData: boolean; date: string; cubeStores?: Array<{ storeNumber: string; netSales: number | null; lyNetSales: number | null; laborPct: number | null; foodCostUsd: number | null; flmPct: number | null; dddSales: number | null; aggregatorSales: number | null }> }> {
+  try {
+    const dateParam = formatDateForApi(date, period)
+    const res = await fetch(`/api/cube?date=${encodeURIComponent(dateParam)}&period=${encodeURIComponent(period)}`, { cache: 'no-store' })
+    const json = await res.json()
+    if (!res.ok || !json.success || !Array.isArray(json.stores)) {
+      return { data: [], isRealData: false, date }
+    }
+    const reports: DailyReportWithStore[] = json.stores
+      .filter((s: { storeNumber: string | null }) => s.storeNumber)
+      .map((s: {
+        storeNumber: string
+        netSales: number | null
+        lyNetSales: number | null
+        laborPct: number | null
+        foodCostUsd: number | null
+        flmPct: number | null
+        dddSales: number | null
+        aggregatorSales: number | null
+      }) => {
+        const storeNumber = String(s.storeNumber)
+        const netSales = s.netSales ?? 0
+        const lyNetSales = s.lyNetSales ?? 0
+        const foodCostPct = netSales && s.foodCostUsd != null ? roundPct((s.foodCostUsd / netSales) * 100) : 0
+        const compPct = lyNetSales ? ((netSales - lyNetSales) / lyNetSales * 100) : undefined
+        return {
+          id: `cube-${storeNumber}-${date}`,
+          store_id: storeNumber,
+          report_date: date,
+          net_sales: netSales,
+          labor_pct: s.laborPct ?? 0,
+          food_cost_pct: foodCostPct,
+          flm_pct: s.flmPct ?? 0,
+          cash_short: 0,
+          doordash_sales: s.dddSales ?? 0,
+          ubereats_sales: s.aggregatorSales ?? 0,
+          food_cost_usd: s.foodCostUsd ?? undefined,
+          comp_pct: compPct != null ? Number(compPct.toFixed(1)) : undefined,
+          raw_pdf_url: null,
+          created_at: new Date().toISOString(),
+          stores: {
+            id: storeNumber,
+            store_number: Number(storeNumber),
+            name: `Store ${storeNumber}`,
+            location: '',
+            created_at: new Date().toISOString(),
+          },
+        } as DailyReportWithStore
+      })
+    return { data: reports, isRealData: true, date, cubeStores: json.stores }
+  } catch (error) {
+    console.warn('Failed to fetch from cube:', error)
+    return { data: [], isRealData: false, date, cubeStores: undefined }
   }
 }
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
+  const router = useRouter()
   const [raw, setRaw] = useState<DailyReportWithStore[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isRealData, setIsRealData] = useState(false)
+  const [dataSource, setDataSource] = useState<'demo' | 'cube'>('cube')
+  const [cubePeriod, setCubePeriod] = useState<CubePeriod>('daily')
+  const [cubeDate, setCubeDate] = useState<string>(() => getYesterdayDate())
+  const [activeCubeDate, setActiveCubeDate] = useState<string | null>(null)
+  const [cubeLoading, setCubeLoading] = useState(false)
+  const [cubeData, setCubeData] = useState<Array<{ storeNumber: string; netSales: number | null; lyNetSales: number | null; laborPct: number | null; foodCostUsd: number | null; flmPct: number | null; dddSales: number | null; aggregatorSales: number | null }> | null>(null)
 
   const [stores, setStores] = useState<StoreUI[]>([])
   const [reports, setReports] = useState<ReportsByStore>({})
@@ -872,8 +1002,14 @@ export default function DashboardPage() {
 
   const [activeMetric, setActiveMetric] = useState<MetricKey | null>(null) // null = full report
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly') // weekly | monthly
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'upload' | 'yoy' | 'automation' | 'live' | 'guest-experience'>('dashboard') // dashboard | upload | yoy | automation | live | guest-experience
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'trends' | 'upload' | 'yoy' | 'automation' | 'live' | 'guest-experience'>('dashboard') // dashboard | trends | upload | yoy | automation | live | guest-experience
   const [compareMode, setCompareMode] = useState(false) // compare mode toggle
+  const [trendsPeriod, setTrendsPeriod] = useState<'3M' | '6M' | '1Y' | '2Y' | '3Y'>('6M')
+  const [trendsMetricKey, setTrendsMetricKey] = useState<MetricKey>('net_sales')
+  const [trendsStoresSelected, setTrendsStoresSelected] = useState<string[]>([])
+  const [trendsLoading, setTrendsLoading] = useState(false)
+  const [trendsChartData, setTrendsChartData] = useState<Array<Record<string, number | string>>>([])
+  const [trendsTableRows, setTrendsTableRows] = useState<Array<{ storeNum: string; location: string; start: number; latest: number; changePct: number }>>([])
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadFiles, setUploadFiles] = useState<UploadItem[]>([])
@@ -941,6 +1077,7 @@ export default function DashboardPage() {
   const [liveError, setLiveError] = useState<string | null>(null)
   const [liveLastUpdated, setLiveLastUpdated] = useState<Date | null>(null)
   const [refreshCountdown, setRefreshCountdown] = useState(0)
+  const [liveStalenessTick, setLiveStalenessTick] = useState(0)
   const [selectedStore, setSelectedStore] = useState<any>(null)
   const [showStoreModal, setShowStoreModal] = useState(false)
   
@@ -959,26 +1096,54 @@ export default function DashboardPage() {
       const { data: rows, isRealData: real } = await fetchReports(35)
       setRaw(rows)
       setIsRealData(real)
+      setActiveCubeDate(null)
+      setCubeData(null)
     } catch (e: any) {
-      // Try seed data as last resort
-      try {
-        const seedRows = generateSeedReports()
-        setRaw(seedRows)
+      setLoadError(e?.message || 'Failed to load data')
+      setRaw([])
         setIsRealData(false)
-        // Don't set error if seed data works
-      } catch (seedError: any) {
-        // Only show error if seed data also fails
-        setLoadError(seedError?.message || 'Failed to load data')
-      }
     } finally {
       setLoading(false)
     }
   }
 
+  const loadCubeData = async (overrideDate?: string, overridePeriod?: CubePeriod) => {
+    setCubeLoading(true)
+    setLoadError(null)
+    try {
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      const defaultDate = yesterday.toISOString().split('T')[0]
+      const dateToUse = overrideDate ?? (cubeDate || defaultDate)
+      const periodToUse = overridePeriod ?? cubePeriod
+      const { data: rows, isRealData: real, date, cubeStores } = await fetchCubeData(dateToUse, periodToUse)
+      setRaw(rows)
+      setIsRealData(real)
+      setActiveCubeDate(date)
+      setDataSource('cube')
+      setCubeData(cubeStores ?? null)
+    } catch (e: any) {
+      setLoadError(e?.message || 'Failed to load cube data')
+    } finally {
+      setCubeLoading(false)
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
+    if (dataSource === 'demo') {
     void reload()
-    // Set timestamp only on client to avoid hydration mismatch
+    }
     setLastUpdated(new Date().toLocaleString())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataSource])
+
+  // Auto-trigger Load Cube Data on mount (yesterday, period=daily)
+  useEffect(() => {
+    if (activeTab === 'dashboard' && dataSource === 'cube') {
+      void loadCubeData()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Calculate countdown based on lastScraped timestamp
@@ -1095,7 +1260,7 @@ export default function DashboardPage() {
     // Countdown timer - updates every second and triggers refresh when it crosses 0
     const countdownInterval = setInterval(() => {
       if (liveLastUpdated) {
-        setRefreshCountdown((prev) => {
+      setRefreshCountdown((prev) => {
           const newCountdown = calculateCountdown(liveLastUpdated.toISOString())
 
           // When we transition from >0 to <=0, trigger an immediate refresh
@@ -1127,6 +1292,13 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, liveLastUpdated])
 
+  // Staleness tick - updates every minute so "last scraped X mins ago" stays current
+  useEffect(() => {
+    if (activeTab !== 'live' || !liveLastUpdated) return
+    const t = setInterval(() => setLiveStalenessTick((prev) => prev + 1), 60000)
+    return () => clearInterval(t)
+  }, [activeTab, liveLastUpdated])
+
   // SMG Guest Experience is temporarily disabled
   // useEffect(() => {
   //   // Disabled
@@ -1141,10 +1313,40 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    // Normalize stores + reports from joined rows.
     const storeMap = new Map<string, StoreUI>()
     const byStore: ReportsByStore = {}
 
+    if (dataSource === 'cube' && cubeData && cubeData.length > 0) {
+      const reportDate = activeCubeDate || cubeDate || getYesterdayDate()
+      const label = formatDateShort(reportDate)
+      for (const s of cubeData) {
+        const storeNumber = String(s.storeNumber)
+        const store: StoreUI = {
+          id: storeNumber,
+          number: storeNumber,
+          name: `Store ${storeNumber}`,
+          location: DEFAULT_STORES.find((d) => d.number === storeNumber)?.location ?? '',
+        }
+        storeMap.set(store.number, store)
+        const netSales = s.netSales ?? 0
+        const lyNetSales = s.lyNetSales ?? 0
+        const compPct = lyNetSales ? ((netSales - lyNetSales) / lyNetSales * 100) : undefined
+        const point: ReportPoint = {
+          label,
+          report_date: reportDate,
+          net_sales: netSales,
+          labor_pct: s.laborPct ?? 0,
+          food_cost_pct: netSales && s.foodCostUsd != null ? roundPct((s.foodCostUsd / netSales) * 100) : 0,
+          flm_pct: s.flmPct ?? 0,
+          cash_short: 0,
+          doordash_sales: s.dddSales ?? 0,
+          ubereats_sales: s.aggregatorSales ?? 0,
+          food_cost_usd: s.foodCostUsd ?? undefined,
+          comp_pct: compPct != null ? Number(compPct.toFixed(1)) : undefined,
+        }
+        byStore[store.number] = [point]
+      }
+    } else {
     for (const r of raw) {
       const s = (r as any).stores
       if (!s) continue
@@ -1166,21 +1368,25 @@ export default function DashboardPage() {
         cash_short: safeNum(r.cash_short),
         doordash_sales: safeNum((r as any).doordash_sales),
         ubereats_sales: safeNum((r as any).ubereats_sales),
+          food_cost_usd: (r as any).food_cost_usd != null ? safeNum((r as any).food_cost_usd) : undefined,
+          comp_pct: (r as any).comp_pct != null ? safeNum((r as any).comp_pct) : undefined,
       }
 
       if (!byStore[store.number]) byStore[store.number] = []
       byStore[store.number].push(point)
     }
 
-    // Sort each store's points chronologically.
     for (const k of Object.keys(byStore)) {
       byStore[k].sort((a, b) => (a.report_date > b.report_date ? 1 : -1))
+      }
     }
 
     let storeList = Array.from(storeMap.values()).sort((a, b) => (a.number > b.number ? 1 : -1))
+    if (storeList.length === 0) {
+      storeList = [...DEFAULT_STORES]
+    }
 
-    // Apply view mode transformation.
-    if (viewMode === 'monthly') {
+    if (viewMode === 'monthly' && dataSource !== 'cube') {
       const monthly: ReportsByStore = {}
       for (const k of Object.keys(byStore)) monthly[k] = aggregateMonthly(byStore[k])
       setReports(monthly)
@@ -1190,16 +1396,14 @@ export default function DashboardPage() {
 
     setStores(storeList)
 
-    // Initialize selected stores if empty.
     if (selectedStores.length === 0 && storeList.length > 0) {
-      setSelectedStores(storeList.slice(0, Math.min(3, storeList.length)).map((s) => s.number))
+      setSelectedStores(storeList.slice(0, Math.min(6, storeList.length)).map((s) => s.number))
     } else {
-      // Ensure selection exists.
       const available = new Set(storeList.map((s) => s.number))
       setSelectedStores((prev) => prev.filter((n) => available.has(n)))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [raw, viewMode])
+  }, [raw, viewMode, dataSource, cubeData, activeCubeDate, cubeDate])
 
   const dateRange = useMemo(() => {
     const dates = raw.map((r) => r.report_date).filter(Boolean).sort()
@@ -1279,6 +1483,113 @@ export default function DashboardPage() {
 
   const selectedStoresSafe = selectedStores.filter((n) => stores.some((s) => s.number === n))
 
+  // Trends tab: default to all stores selected on entry
+  useEffect(() => {
+    if (activeTab === 'trends' && trendsStoresSelected.length === 0 && stores.length > 0) {
+      setTrendsStoresSelected(stores.map((s) => s.number))
+    }
+  }, [activeTab, stores, trendsStoresSelected.length])
+
+  // Trends tab: fetch cube data when visible and when period/metric/stores change
+  useEffect(() => {
+    if (activeTab !== 'trends' || trendsStoresSelected.length === 0) {
+      setTrendsChartData([])
+      setTrendsTableRows([])
+      return
+    }
+
+    type CubeStoreRow = {
+      storeNumber: string
+      netSales: number | null
+      laborPct: number | null
+      foodCostUsd: number | null
+      flmPct: number | null
+      dddSales: number | null
+      aggregatorSales: number | null
+    }
+
+    const getMetricFromStore = (s: CubeStoreRow, key: MetricKey): number => {
+      switch (key) {
+        case 'net_sales':
+          return s.netSales ?? 0
+        case 'labor_pct':
+          return roundPct(s.laborPct ?? 0)
+        case 'food_cost_pct': {
+          const ns = s.netSales ?? 0
+          return ns && s.foodCostUsd != null ? roundPct((s.foodCostUsd / ns) * 100) : 0
+        }
+        case 'flm_pct':
+          return roundPct(s.flmPct ?? 0)
+        case 'doordash_sales':
+          return s.dddSales ?? 0
+        case 'ubereats_sales':
+          return s.aggregatorSales ?? 0
+        case 'cash_short':
+          return 0
+        default:
+          return 0
+      }
+    }
+
+    const periodConfig = {
+      '3M': { count: 12, period: 'weekly' as const, label: '12 weeks' },
+      '6M': { count: 6, period: 'monthly' as const, label: '6 months' },
+      '1Y': { count: 12, period: 'monthly' as const, label: '12 months' },
+      '2Y': { count: 24, period: 'monthly' as const, label: '24 months' },
+      '3Y': { count: 36, period: 'monthly' as const, label: '36 months' },
+    }
+    const config = periodConfig[trendsPeriod]
+    const dates =
+      config.period === 'weekly'
+        ? getPrevWeeks(getDefaultWeek(), config.count)
+        : getPrevMonths(getDefaultMonth(), config.count)
+
+    setTrendsLoading(true)
+    Promise.all(
+      dates.map((d) =>
+        fetch(`/api/cube?date=${encodeURIComponent(d)}&period=${config.period}`, { cache: 'no-store' })
+          .then((r) => r.json())
+          .catch(() => ({ success: false, stores: [] }))
+      )
+    )
+      .then((results) => {
+        const chartData: Array<Record<string, number | string>> = dates.map((dateStr, i) => {
+          const storesList: CubeStoreRow[] = results[i]?.stores ?? []
+          const point: Record<string, number | string> = {
+            date: config.period === 'weekly' ? dateStr : dateStr,
+            label: config.period === 'weekly' ? `W${i + 1}` : dateStr,
+          }
+          trendsStoresSelected.forEach((storeNum) => {
+            const s = storesList.find((x: CubeStoreRow) => String(x.storeNumber) === storeNum)
+            point[storeNum] = s ? getMetricFromStore(s, trendsMetricKey) : 0
+          })
+          return point
+        })
+
+        setTrendsChartData(chartData)
+
+        // Table: start (first period), latest (last period), change %
+        const rows = trendsStoresSelected
+          .map((storeNum) => {
+            const store = stores.find((s) => s.number === storeNum)
+            const firstVal = (chartData[0]?.[storeNum] as number) ?? 0
+            const lastVal = (chartData[chartData.length - 1]?.[storeNum] as number) ?? 0
+            const changePct = firstVal === 0 ? (lastVal > 0 ? 100 : 0) : ((lastVal - firstVal) / firstVal) * 100
+            return {
+              storeNum,
+              location: store?.location ?? '',
+              start: firstVal,
+              latest: lastVal,
+              changePct,
+            }
+          })
+          .sort((a, b) => a.changePct - b.changePct) // worst first
+
+        setTrendsTableRows(rows)
+      })
+      .finally(() => setTrendsLoading(false))
+  }, [activeTab, trendsPeriod, trendsMetricKey, trendsStoresSelected, stores])
+
   return (
     <div style={{ background: 'var(--bg-base)', minHeight: '100vh', color: 'var(--text-primary)' }}>
       {/* Header */}
@@ -1312,17 +1623,48 @@ export default function DashboardPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
-            {([
-              ['dashboard', 'Dashboard'],
-              ['upload', 'Upload Reports'],
-              ['yoy', 'Year vs Year'],
-              ['automation', 'Automation Log'],
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 8,
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                background: activeTab === 'dashboard' ? 'var(--brand)' : 'transparent',
+                color: activeTab === 'dashboard' ? '#fff' : 'var(--text-tertiary)',
+              }}
+            >
+              Dashboard
+            </button>
+            <Link
+              href="/trends"
+              style={{
+                padding: '8px 16px',
+                borderRadius: 8,
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                background: 'transparent',
+                color: 'var(--text-tertiary)',
+                textDecoration: 'none',
+              }}
+              className="tab-btn"
+            >
+              Trends
+            </Link>
+            {[
               ['live', 'Live'],
               ['guest-experience', 'Guest Experience'],
-            ] as const).map(([key, label]) => (
+            ].map(([key, label]) => (
               <button
                 key={key}
-                onClick={() => setActiveTab(key)}
+                onClick={() => setActiveTab(key as 'live' | 'guest-experience')}
                 className={`tab-btn ${activeTab === key ? 'active' : ''}`}
                 style={{
                   padding: '8px 16px',
@@ -1352,14 +1694,20 @@ export default function DashboardPage() {
                   fontSize: 10,
                   fontWeight: 500,
                   fontFamily: "'JetBrains Mono', monospace",
-                  background: isRealData ? 'var(--success-subtle)' : 'var(--warning-subtle)',
-                  color: isRealData ? 'var(--success-text)' : 'var(--warning-text)',
+                  background: dataSource === 'cube' && activeCubeDate ? 'var(--success-subtle)' : isRealData ? 'var(--success-subtle)' : 'var(--warning-subtle)',
+                  color: dataSource === 'cube' && activeCubeDate ? 'var(--success-text)' : isRealData ? 'var(--success-text)' : 'var(--warning-text)',
                 }}
               >
-                {isRealData ? 'LIVE DATA' : 'DEMO DATA'}
+                {dataSource === 'cube' && activeCubeDate
+                  ? `CUBE DATA · ${formatCubeDateLabel(activeCubeDate, cubePeriod)}`
+                  : dataSource === 'cube'
+                    ? 'LIVE CUBE'
+                    : isRealData
+                      ? 'LIVE DATA'
+                      : 'DEMO DATA'}
               </span>
             </div>
-            {dateRange && <div style={{ fontFamily: "'Inter', sans-serif" }}>Range: {formatDateShort(dateRange.start)} – {formatDateShort(dateRange.end)}</div>}
+            {dataSource !== 'cube' && dateRange && <div style={{ fontFamily: "'Inter', sans-serif" }}>Range: {formatDateShort(dateRange.start)} – {formatDateShort(dateRange.end)}</div>}
           </div>
         </div>
       </div>
@@ -1419,7 +1767,7 @@ export default function DashboardPage() {
         )}
 
         {/* UPLOAD TAB */}
-        {!loading && activeTab === 'upload' && (
+        {false && !loading && activeTab === 'upload' && (
           <div className="fade-in" style={{ maxWidth: 600, margin: '0 auto' }}>
             <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>Upload Reports</div>
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 24, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
@@ -1429,8 +1777,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* AUTOMATION LOG TAB */}
-        {!loading && activeTab === 'automation' && (
+        {/* AUTOMATION LOG TAB - commented out */}
+        {/* {!loading && activeTab === 'automation' && (
           <div className="fade-in">
             <iframe
               src="/automation"
@@ -1444,7 +1792,7 @@ export default function DashboardPage() {
               title="Automation Log"
             />
           </div>
-        )}
+        )} */}
 
         {/* LIVE TAB */}
         {!loading && activeTab === 'live' && (
@@ -1457,6 +1805,22 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                {liveLastUpdated && (() => {
+                  const minsAgo = Math.floor((Date.now() - liveLastUpdated.getTime()) / 60000)
+                  const isStale = minsAgo > 20
+                  return (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        fontFamily: "'Inter', sans-serif",
+                        color: isStale ? 'var(--danger-text)' : 'var(--success-text)',
+                      }}
+                    >
+                      {isStale ? `⚠ STALE — last scraped ${minsAgo} mins ago` : '● LIVE'}
+                    </div>
+                  )
+                })()}
                 {liveLastUpdated && (
                   <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
                     Last updated: {liveLastUpdated.toLocaleTimeString()}
@@ -1649,7 +2013,7 @@ export default function DashboardPage() {
                                       }}
                                     >
                                       {display}
-                                    </span>
+                                </span>
                                   )
                                 })()
                               )}
@@ -1967,8 +2331,202 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* TRENDS TAB */}
+        {!loading && activeTab === 'trends' && (
+          <div className="fade-in">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>📈 Trends Analysis</div>
+                <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
+                  Trend lines from cube data across selected stores.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 24 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start', marginBottom: 20 }}>
+                <div>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 8 }}>METRIC</div>
+                  <select
+                    value={trendsMetricKey}
+                    onChange={(e) => setTrendsMetricKey(e.target.value as MetricKey)}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: '1px solid var(--border-default)',
+                      background: 'var(--bg-overlay)',
+                      color: 'var(--text-primary)',
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 13,
+                      minWidth: 160,
+                    }}
+                  >
+                    {METRICS.filter((m) => m.key !== 'cash_short').map((m) => (
+                      <option key={m.key} value={m.key}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ flex: 1, minWidth: 280 }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 8 }}>STORES</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {stores.map((s, i) => {
+                      const checked = trendsStoresSelected.includes(s.number)
+                      return (
+                        <label
+                          key={s.number}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '6px 10px',
+                            borderRadius: 6,
+                            border: `1px solid ${checked ? STORE_COLORS[i % STORE_COLORS.length] : 'var(--border-default)'}`,
+                            background: checked ? `${STORE_COLORS[i % STORE_COLORS.length]}20` : 'var(--bg-overlay)',
+                            color: 'var(--text-primary)',
+                            fontFamily: "'Inter', sans-serif",
+                            fontSize: 12,
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setTrendsStoresSelected((prev) =>
+                                prev.includes(s.number) ? prev.filter((n) => n !== s.number) : [...prev, s.number]
+                              )
+                            }}
+                            style={{ width: 16, height: 16, accentColor: 'var(--brand)' }}
+                          />
+                          {s.number}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 8 }}>PERIOD</div>
+                <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
+                  {(['3M', '6M', '1Y', '2Y', '3Y'] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setTrendsPeriod(p)}
+                      style={{
+                        padding: '6px 16px',
+                        borderRadius: 8,
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        letterSpacing: '0.04em',
+                        background: trendsPeriod === p ? 'var(--bg-elevated)' : 'transparent',
+                        color: trendsPeriod === p ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                      }}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                {trendsLoading ? (
+                  <div style={{ height: 350, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", fontSize: 13 }}>
+                    <div style={{ width: 32, height: 32, border: '3px solid var(--border-default)', borderTopColor: 'var(--brand)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    Loading {trendsPeriod === '3M' ? '12 weeks' : trendsPeriod === '6M' ? '6 months' : trendsPeriod === '1Y' ? '12 months' : trendsPeriod === '2Y' ? '24 months' : '36 months'} of data...
+                  </div>
+                ) : trendsChartData.length === 0 ? (
+                  <div style={{ height: 350, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontSize: 13 }}>
+                    No data. Select at least one store.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={350}>
+                    <LineChart data={trendsChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="1 3" stroke="var(--border-subtle)" />
+                      <XAxis dataKey="label" stroke="var(--text-tertiary)" tick={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fill: 'var(--text-tertiary)' }} />
+                      <YAxis
+                        stroke="var(--text-tertiary)"
+                        tick={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fill: 'var(--text-tertiary)' }}
+                        tickFormatter={(v) => (METRICS.find((x) => x.key === trendsMetricKey)?.fmt(v) ?? String(v))}
+                      />
+                      <Tooltip
+                        content={({ active, payload, label }) => {
+                          if (!active || !payload?.length) return null
+                          return (
+                            <div style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)', borderRadius: 8, padding: '12px 16px' }}>
+                              <div style={{ fontSize: 12, color: 'var(--text-primary)', fontFamily: "'Inter', sans-serif", marginBottom: 8 }}>{label}</div>
+                              {payload.map((p: any) => (
+                                <div key={p.dataKey} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
+                                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif" }}>Store {p.dataKey}:</span>
+                                  <span style={{ fontSize: 12, fontWeight: 600, color: p.color, fontFamily: "'JetBrains Mono', monospace" }}>
+                                    {METRICS.find((m) => m.key === trendsMetricKey)?.fmt(p.value) ?? p.value}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12, fontFamily: "'Inter', sans-serif", color: 'var(--text-secondary)' }} formatter={(val) => `Store ${val}`} />
+                      {trendsStoresSelected.map((storeNum, i) => {
+                        const color = STORE_COLORS[stores.findIndex((s) => s.number === storeNum) % STORE_COLORS.length] ?? STORE_COLORS[i % STORE_COLORS.length]
+                        return (
+                          <Line key={storeNum} type="monotone" dataKey={storeNum} stroke={color} strokeWidth={2} dot={{ r: 0 }} activeDot={{ r: 4, fill: color }} />
+                        )
+                      })}
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+
+              {!trendsLoading && trendsTableRows.length > 0 && (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: "'Inter', sans-serif", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-default)' }}>
+                        <th style={{ textAlign: 'left', padding: '10px 12px', color: 'var(--text-tertiary)', fontWeight: 600, fontSize: 11, letterSpacing: '0.08em' }}>STORE</th>
+                        <th style={{ textAlign: 'left', padding: '10px 12px', color: 'var(--text-tertiary)', fontWeight: 600, fontSize: 11, letterSpacing: '0.08em' }}>LOCATION</th>
+                        <th style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--text-tertiary)', fontWeight: 600, fontSize: 11, letterSpacing: '0.08em' }}>START</th>
+                        <th style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--text-tertiary)', fontWeight: 600, fontSize: 11, letterSpacing: '0.08em' }}>LATEST</th>
+                        <th style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--text-tertiary)', fontWeight: 600, fontSize: 11, letterSpacing: '0.08em' }}>CHANGE</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trendsTableRows.map((row) => {
+                        const fmt = METRICS.find((m) => m.key === trendsMetricKey)?.fmt ?? ((v: number) => String(v))
+                        const isBad = row.changePct < -10
+                        const isGood = row.changePct > 5
+                        const rowBg = isBad ? 'rgba(239, 68, 68, 0.08)' : isGood ? 'rgba(34, 197, 94, 0.08)' : 'transparent'
+                        return (
+                          <tr key={row.storeNum} style={{ borderBottom: '1px solid var(--border-subtle)', background: rowBg }}>
+                            <td style={{ padding: '10px 12px', color: 'var(--text-primary)', fontWeight: 600 }}>{row.storeNum}</td>
+                            <td style={{ padding: '10px 12px', color: 'var(--text-secondary)' }}>{row.location || '—'}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)' }}>{fmt(row.start)}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>{fmt(row.latest)}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: isBad ? 'var(--danger-text)' : isGood ? 'var(--success-text)' : 'var(--text-secondary)' }}>
+                              {row.changePct >= 0 ? '▲' : '▼'} {row.changePct >= 0 ? '+' : ''}{row.changePct.toFixed(1)}%
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* YEAR VS YEAR TAB */}
-        {!loading && activeTab === 'yoy' && (
+        {false && !loading && activeTab === 'yoy' && (
           <div className="fade-in">
             {yoyComparisons.length === 0 ? (
               <div style={{ maxWidth: 800, margin: '0 auto' }}>
@@ -2143,36 +2701,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* View mode */}
-                <div>
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 10 }}>VIEW MODE</div>
-                  <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
-                    {([
-                      ['weekly', 'Daily'],
-                      ['monthly', 'Monthly'],
-                    ] as const).map(([key, label]) => (
-                      <button
-                        key={key}
-                        onClick={() => setViewMode(key)}
-                        style={{
-                          padding: '6px 16px',
-                          borderRadius: 8,
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontFamily: "'Inter', sans-serif",
-                          fontSize: 13,
-                          fontWeight: 600,
-                          letterSpacing: '0.04em',
-                          background: viewMode === key ? 'var(--bg-elevated)' : 'transparent',
-                          color: viewMode === key ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 {/* Metric filter */}
                 <div style={{ flex: 2, minWidth: 400 }}>
                   <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 10 }}>
@@ -2210,6 +2738,9 @@ export default function DashboardPage() {
                         }}
                       >
                         {m.label}
+                        {m.tooltip && (
+                          <span style={{ marginLeft: 4, cursor: 'help', opacity: 0.8 }} title={m.tooltip} aria-label="Info">ⓘ</span>
+                        )}
                       </div>
                     ))}
                     <div
@@ -2242,10 +2773,196 @@ export default function DashboardPage() {
                       >
                         Compare Mode
                       </div>
+                    <div
+                      className="metric-chip"
+                      onClick={() => router.push('/trends')}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 6,
+                        fontSize: 13,
+                        fontWeight: 500,
+                        border: '1px solid var(--border-default)',
+                        background: 'transparent',
+                        color: 'var(--text-tertiary)',
+                        fontFamily: "'Inter', sans-serif",
+                        cursor: 'pointer',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--border-strong)'
+                        e.currentTarget.style.color = 'var(--text-secondary)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--border-default)'
+                        e.currentTarget.style.color = 'var(--text-tertiary)'
+                      }}
+                    >
+                      Trends
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* Date control bar (when LIVE CUBE selected) */}
+            {dataSource === 'cube' && (
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '16px 20px', marginBottom: 24 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 8 }}>PERIOD</div>
+                    <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
+                      {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => {
+                            const newDate = p === 'daily' ? getYesterdayDate() : p === 'weekly' ? getDefaultWeek() : p === 'monthly' ? getDefaultMonth() : '2025'
+                            setCubePeriod(p)
+                            setCubeDate(newDate)
+                            void loadCubeData(newDate, p)
+                          }}
+                          style={{
+                            padding: '6px 16px',
+                            borderRadius: 8,
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontFamily: "'Inter', sans-serif",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            letterSpacing: '0.04em',
+                            background: cubePeriod === p ? 'var(--bg-elevated)' : 'transparent',
+                            color: cubePeriod === p ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                          }}
+                        >
+                          {p === 'daily' ? 'Day' : p === 'weekly' ? 'Week' : p === 'monthly' ? 'Month' : 'Year'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 8 }}>
+                      {cubePeriod === 'daily' ? 'DATE' : cubePeriod === 'weekly' ? 'WEEK' : cubePeriod === 'monthly' ? 'MONTH' : 'YEAR'}
+                    </div>
+                    {cubePeriod === 'yearly' ? (
+                      <select
+                        value={cubeDate}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setCubeDate(val)
+                          void loadCubeData(val, 'yearly')
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-default)',
+                          background: 'var(--bg-overlay)',
+                          color: 'var(--text-primary)',
+                          fontFamily: "'Inter', sans-serif",
+                          fontSize: 13,
+                        }}
+                      >
+                        {[2022, 2023, 2024, 2025, 2026].map((y) => (
+                          <option key={y} value={String(y)}>{y}</option>
+                        ))}
+                      </select>
+                    ) : cubePeriod === 'weekly' ? (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <select
+                          value={cubeDate.includes('-W') ? cubeDate.split('-')[0] : String(new Date().getFullYear())}
+                          onChange={(e) => {
+                            const year = e.target.value
+                            const week = cubeDate.includes('-W') ? (cubeDate.split('-W')[1] || '1') : String(getDefaultWeek().split('-W')[1] || '1')
+                            const val = `${year}-W${week.padStart(2, '0')}`
+                            setCubeDate(val)
+                            void loadCubeData(val, 'weekly')
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: 6,
+                            border: '1px solid var(--border-default)',
+                            background: 'var(--bg-overlay)',
+                            color: 'var(--text-primary)',
+                            fontFamily: "'Inter', sans-serif",
+                            fontSize: 13,
+                          }}
+                        >
+                          {[2022, 2023, 2024, 2025, 2026].map((y) => (
+                            <option key={y} value={String(y)}>{y}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={cubeDate.includes('-W') ? parseInt(cubeDate.split('-W')[1] || '1', 10) : parseInt(getDefaultWeek().split('-W')[1] || '1', 10)}
+                          onChange={(e) => {
+                            const week = e.target.value
+                            const year = cubeDate.includes('-W') ? cubeDate.split('-')[0] : String(new Date().getFullYear())
+                            const val = `${year}-W${String(week).padStart(2, '0')}`
+                            setCubeDate(val)
+                            void loadCubeData(val, 'weekly')
+                          }}
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: 6,
+                            border: '1px solid var(--border-default)',
+                            background: 'var(--bg-overlay)',
+                            color: 'var(--text-primary)',
+                            fontFamily: "'Inter', sans-serif",
+                            fontSize: 13,
+                          }}
+                        >
+                          {Array.from({ length: 52 }, (_, i) => i + 1).map((w) => (
+                            <option key={w} value={w}>Week {w}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <input
+                        type={cubePeriod === 'daily' ? 'date' : 'month'}
+                        value={cubeDate}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setCubeDate(val)
+                          void loadCubeData(val, cubePeriod)
+                        }}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-default)',
+                          background: 'var(--bg-overlay)',
+                          color: 'var(--text-primary)',
+                          fontFamily: "'Inter', sans-serif",
+                          fontSize: 13,
+                        }}
+                      />
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                    <button
+                      onClick={() => void loadCubeData()}
+                      disabled={cubeLoading}
+                      style={{
+                        padding: '8px 20px',
+                        borderRadius: 8,
+                        border: 'none',
+                        cursor: cubeLoading ? 'not-allowed' : 'pointer',
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        letterSpacing: '0.04em',
+                        background: 'var(--brand)',
+                        color: '#fff',
+                      }}
+                    >
+                      {cubeLoading ? (
+                        <>
+                          <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid rgba(255,255,255,0.5)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginRight: 8, verticalAlign: 'middle' }} />
+                          Loading…
+                        </>
+                      ) : (
+                        'Load Cube Data'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Compare Mode */}
             {compareMode ? (
@@ -2258,6 +2975,9 @@ export default function DashboardPage() {
                 storeColors={STORE_COLORS}
                 targets={TARGETS}
                 onMetricSelect={(key) => setActiveMetric(key as MetricKey)}
+                cubeData={cubeData}
+                cubeDate={cubeDate}
+                cubePeriod={cubePeriod}
               />
             ) : (
               <>
@@ -2281,10 +3001,11 @@ export default function DashboardPage() {
                 {selectedStoresSafe.length === 1 && (
                   <SingleStoreDateCompare
                     store={stores.find((s) => s.number === selectedStoresSafe[0])!}
-                    reports={reports[selectedStoresSafe[0]] || []}
+                    cubeData={cubeData}
+                    cubePeriod={cubePeriod}
+                    cubeDate={cubeDate}
                     metrics={METRICS}
                     storeColor={STORE_COLORS[stores.findIndex((s) => s.number === selectedStoresSafe[0]) % STORE_COLORS.length]}
-                    viewMode={viewMode}
                   />
                 )}
 
@@ -2299,21 +3020,35 @@ export default function DashboardPage() {
 
             {/* Targets row */}
             <div style={{ marginTop: 24, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-              {METRICS.map((m) => (
+              {METRICS.map((m) => {
+                const isDollarTarget = m.key === 'net_sales' || m.key === 'cash_short' || m.key === 'doordash_sales' || m.key === 'ubereats_sales'
+                const targetVal = TARGETS[m.key]
+                const targetLabel = m.key === 'net_sales'
+                  ? `> $${(targetVal ?? 0).toLocaleString()}`
+                  : m.key === 'cash_short'
+                    ? `< $${(targetVal ?? 0)}`
+                    : isDollarTarget && targetVal != null
+                      ? `> $${targetVal.toLocaleString()}`
+                      : targetVal != null
+                        ? `< ${targetVal}%`
+                        : '—'
+                return (
                 <div key={m.key} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.12em', marginBottom: 8 }}>{m.label.toUpperCase()} TARGET</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.12em', marginBottom: 8 }}>
+                    {m.label.toUpperCase()} TARGET
+                    {m.tooltip && (
+                      <span style={{ marginLeft: 4, cursor: 'help', opacity: 0.8 }} title={m.tooltip} aria-label="Info">ⓘ</span>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>
-                      {m.key === 'net_sales'
-                        ? `> $${TARGETS.net_sales.toLocaleString()}`
-                        : m.key === 'cash_short'
-                          ? `< $${TARGETS.cash_short}`
-                          : `< ${TARGETS[m.key]}%`}
+                        {targetLabel}
                     </div>
-                    <Badge value={m.key === 'net_sales' ? TARGETS.net_sales : m.key === 'cash_short' ? TARGETS.cash_short - 0.01 : TARGETS[m.key] - 0.01} metricKey={m.key} />
+                      {targetVal != null && <Badge value={targetVal - 0.01} metricKey={m.key} />}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
@@ -2321,4 +3056,3 @@ export default function DashboardPage() {
     </div>
   )
 }
-

@@ -287,4 +287,3 @@ export default function SMGComments({ comments: initialComments = [] }: SMGComme
     </div>
   )
 }
-

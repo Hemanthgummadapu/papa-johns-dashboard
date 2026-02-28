@@ -223,9 +223,29 @@ export default function SMGDashboardEmbed() {
     )
   }
 
+  // Calculate staleness (5.5 hour threshold for 5-hour scrape interval)
+  const isStale = lastScraped ? (Date.now() - new Date(lastScraped).getTime()) > (5.5 * 60 * 60 * 1000) : false
+  const hoursAgo = lastScraped ? Math.floor((Date.now() - new Date(lastScraped).getTime()) / (60 * 60 * 1000)) : 0
+
   return (
     <div style={{ position: 'relative' }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+        {lastScraped && (
+          <div
+            style={{
+              padding: '4px 12px',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              fontFamily: "'Inter', sans-serif",
+              color: isStale ? 'var(--danger-text)' : 'var(--success-text)',
+              background: isStale ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+              border: `1px solid ${isStale ? 'var(--danger-text)' : 'var(--success-text)'}`,
+            }}
+          >
+            {isStale ? `⚠ STALE — last scraped ${hoursAgo} hours ago` : '● LIVE'}
+          </div>
+        )}
         <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
           Last scraped:{' '}
           {lastScraped

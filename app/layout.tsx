@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import ScraperStatusBar from '@/components/ScraperStatusBar'
 
 export const metadata: Metadata = {
   title: 'Papa Johns Dashboard',
@@ -19,7 +20,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <ScraperStatusBar />
+        {children}
+      </body>
     </html>
   )
 }

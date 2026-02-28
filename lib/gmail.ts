@@ -75,7 +75,7 @@ export async function fetchAllPDFsFromGmail(): Promise<EmailWithPDF[]> {
 
           fetch.on('message', (msg) => {
             msg.on('body', (stream) => {
-              simpleParser(stream, async (err, parsed) => {
+              simpleParser(stream as any, async (err, parsed) => {
                 processedCount++
 
                 if (err) {

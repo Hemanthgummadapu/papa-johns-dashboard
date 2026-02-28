@@ -62,11 +62,37 @@ async function scrapeAndSave() {
     }
     
     console.log(`✅ Live data scrape completed - ${storeData.length} stores saved`);
+    
+    // Update scraper status on success
+    try {
+      await supabase.from('scraper_status').update({
+        last_success_at: new Date().toISOString(),
+        last_error_message: null,
+        session_expired: false,
+        updated_at: new Date().toISOString()
+      }).eq('id', 'live_kpi');
+    } catch (statusError) {
+      console.error('Failed to update scraper status:', statusError);
+    }
   } catch (error: any) {
     console.error('❌ Live data scrape failed:', error.message);
+    
+    // Update scraper status on error (if not already SESSION_EXPIRED)
+    if (!error.message.includes('SESSION_EXPIRED')) {
+      try {
+        await supabase.from('scraper_status').update({
+          last_error_at: new Date().toISOString(),
+          last_error_message: error.message || 'Scrape failed',
+          session_expired: false,
+          updated_at: new Date().toISOString()
+        }).eq('id', 'live_kpi');
+      } catch (statusError) {
+        console.error('Failed to update scraper status:', statusError);
+      }
+    }
+    
     process.exit(1);
   }
 }
 
 scrapeAndSave();
-
