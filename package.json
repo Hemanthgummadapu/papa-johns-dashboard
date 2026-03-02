@@ -10,7 +10,8 @@
     "seed": "tsx scripts/seed.ts",
     "setup": "bash scripts/setup-supabase.sh",
     "smg:reauth": "npx tsx scripts/smg-reauth.ts",
-    "live:reauth": "npx tsx scripts/live-reauth.ts"
+    "live:reauth": "npx tsx scripts/live-reauth.ts",
+    "reauth": "tsx scripts/reauth.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

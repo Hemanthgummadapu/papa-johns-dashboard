@@ -49,9 +49,38 @@ type ReportPoint = {
   ubereats_sales?: number
   food_cost_usd?: number
   comp_pct?: number
+  avg_ticket?: number
+  avg_discount?: number
 }
 
 type ReportsByStore = Record<string, ReportPoint[]>
+
+type CubeStoreRow = {
+  storeNumber: string
+  netSales: number | null
+  grossSales: number
+  lyNetSales: number | null
+  laborPct: number | null
+  foodCostUsd: number | null
+  flmPct: number | null
+  dddSales: number | null
+  aggregatorSales: number | null
+  lyAggregatorSales?: number | null
+  deliveryOrders: number | null
+  onlineOrders: number | null
+  carryoutOrders: number | null
+  aggregatorOrders: number | null
+  totalOrders: number | null
+  avgTicket: number
+  avgDiscount: number
+  appSales?: number | null
+  webSales?: number | null
+  onlineSales?: number | null
+  phoneSales?: number | null
+  carryoutPct?: number
+  deliveryPct?: number
+  onlinePct?: number
+}
 
 type UploadItem = {
   file: File
@@ -91,14 +120,15 @@ const METRICS: Array<{
   color: string
   unit: '$' | '%'
   tooltip?: string
+  subtitle?: string
 }> = [
   { key: 'net_sales', label: 'Net Sales', fmt: (v) => `$${v?.toLocaleString()}`, color: '#3b82f6', unit: '$' },
   { key: 'labor_pct', label: 'Labor %', fmt: (v) => `${v}%`, color: '#f59e0b', unit: '%' },
   { key: 'food_cost_pct', label: 'Food Cost %', fmt: (v) => `${v}%`, color: '#8b5cf6', unit: '%' },
   { key: 'flm_pct', label: 'FLM %', fmt: (v) => `${v}%`, color: '#ec4899', unit: '%' },
-  { key: 'cash_short', label: 'Cash Short/Over', fmt: (v) => (v >= 0 ? `+$${v}` : `-$${Math.abs(v)}`), color: '#14b8a6', unit: '$' },
-  { key: 'doordash_sales', label: 'DoorDash (DDD)', fmt: (v) => `$${v?.toLocaleString()}`, color: '#f97316', unit: '$' },
-  { key: 'ubereats_sales', label: '3rd Party (DD+UE+GrubHub)', fmt: (v) => `$${v?.toLocaleString()}`, color: '#06b6d4', unit: '$', tooltip: 'Includes DoorDash, Uber Eats, and GrubHub combined. Cube does not provide separate UE/GrubHub breakdown.' },
+  // { key: 'cash_short', label: 'Cash Short/Over', fmt: (v) => (v >= 0 ? `+$${v}` : `-$${Math.abs(v)}`), color: '#14b8a6', unit: '$' }, // commented out
+  { key: 'doordash_sales', label: 'DoorDash (DDD)', fmt: (v) => `$${v?.toLocaleString()}`, color: '#f97316', unit: '$', subtitle: 'Incl. DDD Cash orders', tooltip: 'DoorDash marketplace + DDDCash orders from cube [DDD Net Sales USD]' },
+  { key: 'ubereats_sales', label: 'Aggregator (DD+UE+GH)', fmt: (v) => `$${v?.toLocaleString()}`, color: '#06b6d4', unit: '$', subtitle: 'DD + UE + GrubHub', tooltip: 'Combined DoorDash + UberEats + GrubHub from cube [TY Aggregator Delivery Net Sales USD]. May differ slightly from POS due to timing.' },
 ]
 
 const STORE_COLORS = ['var(--store-1)', 'var(--store-2)', 'var(--store-3)', 'var(--store-4)', 'var(--store-5)', 'var(--store-6)']
@@ -473,39 +503,132 @@ function UploadPanel({
 function KpiCard({
   store,
   reports,
+  cubeStore,
+  cubeDateLabel,
+  showLyBanner,
 }: {
   store: StoreUI
   reports: ReportPoint[]
+  cubeStore?: CubeStoreRow | null
+  cubeDateLabel?: string
+  showLyBanner?: string
 }) {
+  const [isFlipped, setIsFlipped] = useState(false)
   const latest = reports?.[reports.length - 1]
-  if (!latest) return null
   const idx = Number.isFinite(Number(store.number))
     ? Number(store.number) % STORE_COLORS.length
     : 0
-
   const storeColor = STORE_COLORS[idx]
+  const canFlip = Boolean(cubeStore)
 
-  return (
-    <div
-      style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 12,
-        padding: 20,
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 3,
-          background: storeColor,
-        }}
-      />
+  const cardBaseStyle: React.CSSProperties = {
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: 12,
+    padding: 20,
+    paddingBottom: 28,
+    position: 'relative',
+    overflow: 'visible',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    boxSizing: 'border-box',
+  }
+
+  const topBarStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    background: storeColor,
+  }
+
+  // Back face content (detail metrics) — no transform here; the card-back wrapper has rotateY(180deg)
+  const backContent = cubeStore && (
+    <div style={cardBaseStyle} onClick={() => canFlip && setIsFlipped(false)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setIsFlipped(false) } }} aria-label="Flip card back">
+      <div style={topBarStyle} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+        <div>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>{store.name}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, fontFamily: "'Inter', sans-serif" }}>{cubeDateLabel || 'Cube data'}</div>
+        </div>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setIsFlipped(false) }}
+          style={{
+            fontSize: 12,
+            fontFamily: "'Inter', sans-serif",
+            fontWeight: 500,
+            color: 'var(--text-secondary)',
+            background: 'var(--bg-overlay)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            cursor: 'pointer',
+          }}
+        >
+          ← Back
+        </button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, flex: 1 }}>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>AVG TICKET</div>
+          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
+            ${(cubeStore.avgTicket ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>ONLINE SALES</div>
+          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
+            ${(cubeStore.onlineSales ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>CARRYOUT</div>
+          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
+            {(cubeStore.carryoutOrders ?? 0).toLocaleString()} orders ({(cubeStore.carryoutPct ?? 0)}%)
+          </div>
+        </div>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>DELIVERY</div>
+          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
+            {(cubeStore.deliveryOrders ?? 0).toLocaleString()} orders ({(cubeStore.deliveryPct ?? 0)}%)
+          </div>
+        </div>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>APP SALES</div>
+          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
+            ${(cubeStore.appSales ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>WEB SALES</div>
+          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
+            ${(cubeStore.webSales ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>AVG TICKET</div>
+          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
+            ${(cubeStore.avgTicket ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>AVG DISCOUNT</div>
+          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
+            ${(cubeStore.avgDiscount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  if (!latest) return null
+
+  const frontContent = (
+    <div style={cardBaseStyle}>
+      <div style={topBarStyle} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
           <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>
@@ -513,29 +636,55 @@ function KpiCard({
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
             {store.location}
-            {(latest as any).comp_pct != null && (
+            {!showLyBanner && (latest as any).comp_pct != null && (
               <span style={{ marginLeft: 8, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: (latest as any).comp_pct >= 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>
                 Comp: {(latest as any).comp_pct >= 0 ? '+' : ''}{(latest as any).comp_pct}%
               </span>
             )}
+            {showLyBanner && (
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
+                Showing LY: {showLyBanner}
+              </div>
+            )}
           </div>
         </div>
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 6,
-            background: 'var(--bg-overlay)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 11,
-            fontFamily: "'JetBrains Mono', monospace",
-            color: storeColor,
-            fontWeight: 500,
-          }}
-        >
-          {store.number.slice(-2)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {canFlip && (
+            <button
+              type="button"
+              onClick={() => setIsFlipped(true)}
+              style={{
+                fontSize: 11,
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                background: 'var(--bg-overlay)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 6,
+                padding: '6px 10px',
+                cursor: 'pointer',
+              }}
+            >
+              View details
+            </button>
+          )}
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 6,
+              background: 'var(--bg-overlay)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11,
+              fontFamily: "'JetBrains Mono', monospace",
+              color: storeColor,
+              fontWeight: 500,
+            }}
+          >
+            {store.number.slice(-2)}
+          </div>
         </div>
       </div>
 
@@ -552,8 +701,14 @@ function KpiCard({
           const label = isFoodCost && (latest as any).food_cost_usd != null ? 'FOOD COST' : m.label.toUpperCase()
           return (
             <div key={m.key} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                {label}
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                <span>{label}</span>
+                {m.subtitle && (
+                  <span style={{ fontSize: 10, letterSpacing: '0.02em', opacity: 0.9 }}>{m.subtitle}</span>
+                )}
+                {m.tooltip && (
+                  <span style={{ cursor: 'help', opacity: 0.85 }} title={m.tooltip} aria-label="Info">ℹ</span>
+                )}
               </div>
               <div
                 style={{
@@ -568,6 +723,48 @@ function KpiCard({
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+
+  if (!canFlip) {
+    return <div style={{ minHeight: 0 }}>{frontContent}</div>
+  }
+
+  return (
+    <div style={{ perspective: 1000, minHeight: 420 }}>
+      <div
+        style={{
+          position: 'relative',
+          height: '100%',
+          minHeight: 420,
+          transformStyle: 'preserve-3d',
+          transition: 'transform 0.4s ease',
+          transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
+          }}
+        >
+          {frontContent}
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
+            transform: 'rotateY(180deg)',
+            pointerEvents: isFlipped ? 'auto' : 'none',
+          }}
+        >
+          {backContent}
+        </div>
       </div>
     </div>
   )
@@ -807,7 +1004,10 @@ function FullReportTable({
             </th>
             {METRICS.map((m) => (
               <th key={m.key} style={{ textAlign: 'right', padding: '10px 16px', color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', borderBottom: '1px solid var(--border-subtle)' }}>
-                {m.label.toUpperCase()}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  {m.label.toUpperCase()}
+                  {m.tooltip && <span style={{ cursor: 'help', opacity: 0.85 }} title={m.tooltip} aria-label="Info">ℹ</span>}
+                </span>
               </th>
             ))}
           </tr>
@@ -867,6 +1067,9 @@ function getYesterdayDate(): string {
   return d.toISOString().split('T')[0]
 }
 
+// TODO: Papa Johns fiscal week may start Sunday; ISO week is Monday/Thursday-based.
+// Current implementation returns ISO week number; cube uses [Fiscal Week].
+// Validate with Brad: does PJ fiscal week 01 align with ISO W01? If offset exists, apply fiscalWeek = isoWeek + offset.
 function getDefaultWeek(): string {
   const d = new Date()
   d.setHours(0, 0, 0, 0)
@@ -915,6 +1118,29 @@ function getPrevMonths(current: string, n: number): string[] {
 
 type CubePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly'
 
+/** Same period last year for LY cube query */
+function getLyDate(dateStr: string, period: CubePeriod): string {
+  if (period === 'yearly') {
+    const y = parseInt(dateStr.slice(0, 4), 10)
+    return String(Number.isFinite(y) ? y - 1 : new Date().getFullYear() - 1)
+  }
+  if (period === 'monthly' && /^\d{4}-\d{2}$/.test(dateStr)) {
+    const [y, m] = dateStr.split('-').map(Number)
+    return `${y - 1}-${String(m).padStart(2, '0')}`
+  }
+  if (period === 'weekly' && /^\d{4}-W\d{1,2}$/i.test(dateStr)) {
+    const [y, rest] = dateStr.split('-W')
+    const w = rest?.replace(/^0+/, '') || '1'
+    return `${String(parseInt(y, 10) - 1)}-W${String(w).padStart(2, '0')}`
+  }
+  if (period === 'daily' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const d = new Date(dateStr)
+    d.setFullYear(d.getFullYear() - 1)
+    return d.toISOString().slice(0, 10)
+  }
+  return dateStr
+}
+
 function formatDateForApi(dateStr: string, period: CubePeriod): string {
   if (period === 'yearly') return /^\d{4}$/.test(dateStr) ? dateStr : String(new Date().getFullYear())
   if (period === 'monthly') return /^\d{4}-\d{2}$/.test(dateStr) ? dateStr : new Date().toISOString().slice(0, 7)
@@ -926,26 +1152,21 @@ function formatDateForApi(dateStr: string, period: CubePeriod): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : getYesterdayDate()
 }
 
-async function fetchCubeData(date: string, period: CubePeriod): Promise<{ data: DailyReportWithStore[]; isRealData: boolean; date: string; cubeStores?: Array<{ storeNumber: string; netSales: number | null; lyNetSales: number | null; laborPct: number | null; foodCostUsd: number | null; flmPct: number | null; dddSales: number | null; aggregatorSales: number | null }> }> {
+// LY data: using cube [LY Net Sales USD] built-in measure for main dashboard.
+// ComparisonPanel and SingleStoreDateCompare use separate LY period query instead.
+// TODO: Standardize to two-query approach for consistency.
+async function fetchCubeData(date: string, period: CubePeriod): Promise<{ data: DailyReportWithStore[]; isRealData: boolean; date: string; cubeOffline?: boolean; cubeStores?: CubeStoreRow[] }> {
   try {
     const dateParam = formatDateForApi(date, period)
     const res = await fetch(`/api/cube?date=${encodeURIComponent(dateParam)}&period=${encodeURIComponent(period)}`, { cache: 'no-store' })
     const json = await res.json()
+    const cubeOffline = res.status === 503 || json.status === 'offline'
     if (!res.ok || !json.success || !Array.isArray(json.stores)) {
-      return { data: [], isRealData: false, date }
+      return { data: [], isRealData: false, date, cubeOffline: cubeOffline || undefined }
     }
     const reports: DailyReportWithStore[] = json.stores
       .filter((s: { storeNumber: string | null }) => s.storeNumber)
-      .map((s: {
-        storeNumber: string
-        netSales: number | null
-        lyNetSales: number | null
-        laborPct: number | null
-        foodCostUsd: number | null
-        flmPct: number | null
-        dddSales: number | null
-        aggregatorSales: number | null
-      }) => {
+      .map((s: CubeStoreRow) => {
         const storeNumber = String(s.storeNumber)
         const netSales = s.netSales ?? 0
         const lyNetSales = s.lyNetSales ?? 0
@@ -978,7 +1199,7 @@ async function fetchCubeData(date: string, period: CubePeriod): Promise<{ data: 
     return { data: reports, isRealData: true, date, cubeStores: json.stores }
   } catch (error) {
     console.warn('Failed to fetch from cube:', error)
-    return { data: [], isRealData: false, date, cubeStores: undefined }
+    return { data: [], isRealData: false, date, cubeOffline: true, cubeStores: undefined }
   }
 }
 
@@ -994,7 +1215,9 @@ export default function DashboardPage() {
   const [cubeDate, setCubeDate] = useState<string>(() => getYesterdayDate())
   const [activeCubeDate, setActiveCubeDate] = useState<string | null>(null)
   const [cubeLoading, setCubeLoading] = useState(false)
-  const [cubeData, setCubeData] = useState<Array<{ storeNumber: string; netSales: number | null; lyNetSales: number | null; laborPct: number | null; foodCostUsd: number | null; flmPct: number | null; dddSales: number | null; aggregatorSales: number | null }> | null>(null)
+  const [cubeOffline, setCubeOffline] = useState(false)
+  const [cubeData, setCubeData] = useState<CubeStoreRow[] | null>(null)
+  const [cubeDataLY, setCubeDataLY] = useState<CubeStoreRow[] | null>(null)
 
   const [stores, setStores] = useState<StoreUI[]>([])
   const [reports, setReports] = useState<ReportsByStore>({})
@@ -1110,18 +1333,25 @@ export default function DashboardPage() {
   const loadCubeData = async (overrideDate?: string, overridePeriod?: CubePeriod) => {
     setCubeLoading(true)
     setLoadError(null)
+    setCubeOffline(false)
     try {
       const yesterday = new Date()
       yesterday.setDate(yesterday.getDate() - 1)
       const defaultDate = yesterday.toISOString().split('T')[0]
       const dateToUse = overrideDate ?? (cubeDate || defaultDate)
       const periodToUse = overridePeriod ?? cubePeriod
-      const { data: rows, isRealData: real, date, cubeStores } = await fetchCubeData(dateToUse, periodToUse)
+      const [tyResult, lyResult] = await Promise.all([
+        fetchCubeData(dateToUse, periodToUse),
+        fetchCubeData(getLyDate(dateToUse, periodToUse), periodToUse),
+      ])
+      const { data: rows, isRealData: real, date, cubeStores, cubeOffline } = tyResult
       setRaw(rows)
       setIsRealData(real)
       setActiveCubeDate(date)
       setDataSource('cube')
       setCubeData(cubeStores ?? null)
+      setCubeDataLY(lyResult.cubeStores ?? null)
+      setCubeOffline(cubeOffline ?? false)
     } catch (e: any) {
       setLoadError(e?.message || 'Failed to load cube data')
     } finally {
@@ -1317,9 +1547,12 @@ export default function DashboardPage() {
     const byStore: ReportsByStore = {}
 
     if (dataSource === 'cube' && cubeData && cubeData.length > 0) {
-      const reportDate = activeCubeDate || cubeDate || getYesterdayDate()
+      // TODO: LY toggle - re-enable when LY data query is stable. For now always TY.
+      const useLy = false // cubeViewMode === 'LY' && cubeDataLY && cubeDataLY.length > 0
+      const source: CubeStoreRow[] = useLy ? (cubeDataLY ?? []) : (cubeData ?? [])
+      const reportDate = useLy ? getLyDate(activeCubeDate || cubeDate || getYesterdayDate(), cubePeriod) : (activeCubeDate || cubeDate || getYesterdayDate())
       const label = formatDateShort(reportDate)
-      for (const s of cubeData) {
+      for (const s of source) {
         const storeNumber = String(s.storeNumber)
         const store: StoreUI = {
           id: storeNumber,
@@ -1330,7 +1563,7 @@ export default function DashboardPage() {
         storeMap.set(store.number, store)
         const netSales = s.netSales ?? 0
         const lyNetSales = s.lyNetSales ?? 0
-        const compPct = lyNetSales ? ((netSales - lyNetSales) / lyNetSales * 100) : undefined
+        const compPct = !useLy && lyNetSales ? ((netSales - lyNetSales) / lyNetSales * 100) : undefined
         const point: ReportPoint = {
           label,
           report_date: reportDate,
@@ -1343,6 +1576,8 @@ export default function DashboardPage() {
           ubereats_sales: s.aggregatorSales ?? 0,
           food_cost_usd: s.foodCostUsd ?? undefined,
           comp_pct: compPct != null ? Number(compPct.toFixed(1)) : undefined,
+          avg_ticket: s.avgTicket ?? undefined,
+          avg_discount: s.avgDiscount ?? undefined,
         }
         byStore[store.number] = [point]
       }
@@ -1403,7 +1638,7 @@ export default function DashboardPage() {
       setSelectedStores((prev) => prev.filter((n) => available.has(n)))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [raw, viewMode, dataSource, cubeData, activeCubeDate, cubeDate])
+  }, [raw, viewMode, dataSource, cubeData, cubeDataLY, cubePeriod, activeCubeDate, cubeDate])
 
   const dateRange = useMemo(() => {
     const dates = raw.map((r) => r.report_date).filter(Boolean).sort()
@@ -1711,6 +1946,26 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {dataSource === 'cube' && cubeOffline && (
+        <div
+          style={{
+            padding: '12px 16px',
+            marginBottom: 24,
+            borderRadius: 8,
+            background: 'var(--warning-subtle)',
+            border: '1px solid var(--warning)',
+            color: 'var(--warning-text)',
+            fontSize: 13,
+            fontFamily: "'Inter', sans-serif",
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          ⚠️ Cube server unreachable — showing last known data or empty. Try again when the server is available.
+        </div>
+      )}
 
       {/* Upload success toast */}
       {uploadSuccess && (
@@ -2739,7 +2994,7 @@ export default function DashboardPage() {
                       >
                         {m.label}
                         {m.tooltip && (
-                          <span style={{ marginLeft: 4, cursor: 'help', opacity: 0.8 }} title={m.tooltip} aria-label="Info">ⓘ</span>
+                          <span style={{ marginLeft: 4, cursor: 'help', opacity: 0.85 }} title={m.tooltip} aria-label="Info">ℹ</span>
                         )}
                       </div>
                     ))}
@@ -2814,7 +3069,7 @@ export default function DashboardPage() {
                         <button
                           key={p}
                           onClick={() => {
-                            const newDate = p === 'daily' ? getYesterdayDate() : p === 'weekly' ? getDefaultWeek() : p === 'monthly' ? getDefaultMonth() : '2025'
+                            const newDate = p === 'daily' ? getYesterdayDate() : p === 'weekly' ? getDefaultWeek() : p === 'monthly' ? getDefaultMonth() : String(new Date().getFullYear())
                             setCubePeriod(p)
                             setCubeDate(newDate)
                             void loadCubeData(newDate, p)
@@ -2993,7 +3248,24 @@ export default function DashboardPage() {
                   {selectedStoresSafe.map((num) => {
                     const store = stores.find((s) => s.number === num)
                     if (!store) return null
-                    return <KpiCard key={num} store={store} reports={reports[num] || []} />
+                    // TODO: LY toggle - re-enable when LY data query is stable. For now always TY.
+                    const cubeStore = dataSource === 'cube'
+                      ? cubeData?.find((s) => String(s.storeNumber) === num) ?? null
+                      : null
+                    const showLyBanner = undefined // dataSource === 'cube' && cubeViewMode === 'LY' ? getLyDate(...) : undefined
+                    const cubeDateLabelForCard = dataSource === 'cube'
+                      ? (activeCubeDate || cubeDate || '—')
+                      : undefined
+                    return (
+                      <KpiCard
+                        key={num}
+                        store={store}
+                        reports={reports[num] || []}
+                        cubeStore={cubeStore ?? undefined}
+                        cubeDateLabel={cubeDateLabelForCard}
+                        showLyBanner={showLyBanner}
+                      />
+                    )
                   })}
                 </div>
 
@@ -3037,7 +3309,7 @@ export default function DashboardPage() {
                   <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.12em', marginBottom: 8 }}>
                     {m.label.toUpperCase()} TARGET
                     {m.tooltip && (
-                      <span style={{ marginLeft: 4, cursor: 'help', opacity: 0.8 }} title={m.tooltip} aria-label="Info">ⓘ</span>
+                      <span style={{ marginLeft: 4, cursor: 'help', opacity: 0.85 }} title={m.tooltip} aria-label="Info">ℹ</span>
                     )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

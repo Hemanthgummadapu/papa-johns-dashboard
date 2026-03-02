@@ -37,8 +37,8 @@ const METRICS = [
   { key: 'food_cost_pct', label: 'Food Cost %', fmt: (v: number) => `${v}%`, unit: '%' },
   { key: 'flm_pct', label: 'FLM %', fmt: (v: number) => `${v}%`, unit: '%' },
   { key: 'cash_short', label: 'Cash Short', fmt: (v: number) => (v >= 0 ? `+$${v}` : `-$${Math.abs(v)}`), unit: '$' },
-  { key: 'doordash_sales', label: 'DoorDash', fmt: (v: number) => `$${v?.toLocaleString()}`, unit: '$' },
-  { key: 'ubereats_sales', label: 'Uber Eats', fmt: (v: number) => `$${v?.toLocaleString()}`, unit: '$' },
+  { key: 'doordash_sales', label: 'DoorDash (DDD)', fmt: (v: number) => `$${v?.toLocaleString()}`, unit: '$' },
+  { key: 'ubereats_sales', label: 'Aggregator (DD+UE+GH)', fmt: (v: number) => `$${v?.toLocaleString()}`, unit: '$' },
 ] as const
 
 const TARGETS: Partial<Record<string, number>> = {

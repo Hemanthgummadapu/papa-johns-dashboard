@@ -115,6 +115,18 @@ type CubeStore = {
   flmPct: number | null
   dddSales: number | null
   aggregatorSales: number | null
+  appSales?: number | null
+  webSales?: number | null
+  onlineSales?: number | null
+  phoneSales?: number | null
+  carryoutOrders?: number | null
+  deliveryOrders?: number | null
+  onlineOrders?: number | null
+  totalOrders?: number | null
+  avgTicket?: number
+  carryoutPct?: number
+  deliveryPct?: number
+  onlinePct?: number
 }
 
 function getMetricValue(store: CubeStore, metricKey: string | null): number {

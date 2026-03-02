@@ -34,6 +34,7 @@ yarn-error.log*
 # Session files (contain auth cookies)
 smg-session.json
 extranet-session.json
+scripts/session.json
 
 # Debug screenshots
 debug-*.png

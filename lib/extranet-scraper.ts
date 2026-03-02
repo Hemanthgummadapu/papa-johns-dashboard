@@ -2,11 +2,12 @@ import { chromium } from 'playwright';
 import { existsSync, unlinkSync } from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
+import { ensureSession, EXTRANET_SESSION_PATH } from './extranet-session'
 
 dotenv.config({ path: '.env.local' });
 
 const STORE_IDS = ['2021', '2081', '2259', '2292', '2481', '3011'];
-const SESSION_FILE = './extranet-session.json';
+const SESSION_FILE = EXTRANET_SESSION_PATH;
 
 // Parse function for individual store
 function parseStoreData(storeId: string, text: string) {
@@ -49,41 +50,6 @@ function parseStoreData(storeId: string, text: string) {
   };
 }
 
-async function performLogin(page: any) {
-  console.log('=== Performing fresh login ===');
-  
-  // Go to extranet - will redirect to Microsoft login
-  await page.goto('https://extranet.papajohns.com/GatewayMenu/');
-  
-  // Microsoft login page
-  await page.waitForSelector('input[type="email"]', { timeout: 10000 });
-  await page.fill('input[type="email"]', process.env.PAPAJOHNS_EXTRANET_USER!);
-  await page.click('input[type="submit"]');
-  
-  // Password field
-  await page.waitForSelector('input[type="password"]', { timeout: 10000 });
-  await page.fill('input[type="password"]', process.env.PAPAJOHNS_EXTRANET_PASSWORD!);
-  await page.click('input[type="submit"]');
-  
-  // Wait for "Stay signed in?" prompt and click Yes if it appears (wait up to 8 seconds)
-  try {
-    await page.waitForSelector('#idSIButton9', { timeout: 8000 }); // Yes button
-    await page.click('#idSIButton9'); // Click "Yes"
-    console.log('=== Clicked "Yes" on Stay signed in prompt ===');
-  } catch(e) {
-    console.log('=== No "Stay signed in?" prompt found ===');
-  }
-  
-  // Wait for the page to fully leave Microsoft domain and redirect back to extranet
-  await page.waitForURL('**/extranet.papajohns.com/**', { timeout: 30000 });
-  await page.waitForTimeout(3000);
-  console.log('=== Redirected back to extranet.papajohns.com ===');
-  
-  // Save session after successful login and redirect
-  await page.context().storageState({ path: SESSION_FILE });
-  console.log('=== Session saved ===');
-}
-
 export async function scrapeExtranet() {
   const browser = await chromium.launch({ 
     headless: true,
@@ -91,48 +57,14 @@ export async function scrapeExtranet() {
   });
   
   try {
-    let context;
-    let page;
-    
-    // Try loading session
-    if (existsSync(SESSION_FILE)) {
-      try {
-        console.log('=== Loading existing session ===');
-        context = await browser.newContext({ storageState: SESSION_FILE });
-        page = await context.newPage();
-        await page.goto('https://extranet.papajohns.com/kpi/#/realtime', 
-          { waitUntil: 'domcontentloaded', timeout: 15000 });
-        await page.waitForTimeout(3000);
-        
-        // Check if still logged in - must contain extranet.papajohns.com
-        const currentUrl = page.url();
-        const isLoggedIn = currentUrl.includes('extranet.papajohns.com');
-        
-        if (!isLoggedIn) {
-          // Session expired, delete and re-login
-          console.log('=== Session expired, re-logging in ===');
-          if (existsSync(SESSION_FILE)) {
-            unlinkSync(SESSION_FILE);
-          }
-          await performLogin(page);
-        } else {
-          console.log('=== Session is valid ===');
-        }
-      } catch (error) {
-        console.log('=== Error loading session, re-logging in ===');
-        if (existsSync(SESSION_FILE)) {
-          unlinkSync(SESSION_FILE);
-        }
-        context = await browser.newContext();
-        page = await context.newPage();
-        await performLogin(page);
-      }
-    } else {
-      console.log('=== No session file found, performing login ===');
-      context = await browser.newContext();
-      page = await context.newPage();
-      await performLogin(page);
-    }
+    // Load storageState if present; `ensureSession` will validate and re-login if needed.
+    const hasSessionFile = existsSync(SESSION_FILE)
+    console.log(`[SESSION] Loading session from ${SESSION_FILE}: ${hasSessionFile}`)
+    const context = hasSessionFile
+      ? await browser.newContext({ storageState: SESSION_FILE })
+      : await browser.newContext()
+    const page = await context.newPage()
+    await ensureSession(page, context)
     
     // Skip all menu navigation - go directly to each store URL
     const storeData = [];

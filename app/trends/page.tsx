@@ -29,8 +29,8 @@ const METRICS = [
   { key: 'labor_pct', label: 'Labor %', fmt: (v: number) => `${v}%` },
   { key: 'food_cost_pct', label: 'Food Cost %', fmt: (v: number) => `${v}%` },
   { key: 'flm_pct', label: 'FLM %', fmt: (v: number) => `${v}%` },
-  { key: 'doordash_sales', label: 'DoorDash (DDD)', fmt: (v: number) => `$${v?.toLocaleString()}` },
-  { key: 'ubereats_sales', label: '3rd Party (DD+UE+GrubHub)', fmt: (v: number) => `$${v?.toLocaleString()}`, tooltip: 'Includes DoorDash, Uber Eats, and GrubHub combined. Cube does not provide separate UE/GrubHub breakdown.' },
+  { key: 'doordash_sales', label: 'DoorDash (DDD)', fmt: (v: number) => `$${v?.toLocaleString()}`, tooltip: 'DoorDash marketplace + DDDCash orders from cube [DDD Net Sales USD]' },
+  { key: 'ubereats_sales', label: 'Aggregator (DD+UE+GH)', fmt: (v: number) => `$${v?.toLocaleString()}`, tooltip: 'Combined DoorDash + UberEats + GrubHub from cube [TY Aggregator Delivery Net Sales USD]. May differ slightly from POS due to timing.' },
 ] as const
 type MetricKey = (typeof METRICS)[number]['key']
 
@@ -1239,7 +1239,7 @@ function SpecialCard({
       { label: 'Net Sales', before: source.before.netSales.toLocaleString(), after: source.after.netSales.toLocaleString(), change: source.netSalesChange, isGood: source.netSalesChange > 0, isPctPoints: false },
       { label: 'Labor %', before: source.before.laborPct.toFixed(1) + '%', after: source.after.laborPct.toFixed(1) + '%', change: source.laborChange, isGood: source.laborChange < 0, isPctPoints: true },
       { label: 'DoorDash (DDD)', before: source.before.dddSales.toLocaleString(), after: source.after.dddSales.toLocaleString(), change: source.ddSalesChange, isGood: source.ddSalesChange > 0, isPctPoints: false },
-      { label: '3rd Party (DD+UE+GrubHub)', before: source.before.aggregatorSales.toLocaleString(), after: source.after.aggregatorSales.toLocaleString(), change: source.ueSalesChange, isGood: source.ueSalesChange > 0, isPctPoints: false },
+      { label: 'Aggregator (DD+UE+GH)', before: source.before.aggregatorSales.toLocaleString(), after: source.after.aggregatorSales.toLocaleString(), change: source.ueSalesChange, isGood: source.ueSalesChange > 0, isPctPoints: false },
     ]
   })()
 
@@ -1495,7 +1495,7 @@ function SpecialCard({
                           </div>
                           <div className="flex justify-between text-xs">
                             <span className="text-gray-400">
-                              {special.platform === 'doordash' ? 'DoorDash (DDD)' : special.platform === 'ubereats' ? '3rd Party' : 'Net Sales'}
+                              {special.platform === 'doordash' ? 'DoorDash (DDD)' : special.platform === 'ubereats' ? 'Aggregator (DD+UE+GH)' : 'Net Sales'}
                             </span>
                             <span className={primaryChange >= 0 ? 'text-green-400' : 'text-red-400'}>
                               {primaryChange >= 0 ? '▲' : '▼'}

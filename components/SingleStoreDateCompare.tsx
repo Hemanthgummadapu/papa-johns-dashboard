@@ -36,6 +36,21 @@ type CubeStore = {
   flmPct: number | null
   dddSales: number | null
   aggregatorSales: number | null
+  grossSales?: number
+  deliveryOrders?: number | null
+  onlineOrders?: number | null
+  carryoutOrders?: number | null
+  aggregatorOrders?: number | null
+  totalOrders?: number | null
+  avgTicket?: number
+  avgDiscount?: number
+  appSales?: number | null
+  webSales?: number | null
+  onlineSales?: number | null
+  phoneSales?: number | null
+  carryoutPct?: number
+  deliveryPct?: number
+  onlinePct?: number
 }
 
 function roundPct(v: number): number {
@@ -132,7 +147,7 @@ function getPctChange(current: number, previous: number): number {
 }
 
 function isImprovement(metricKey: string, pctChange: number): boolean {
-  const lowerIsBetter = ['labor_pct', 'food_cost_pct', 'flm_pct']
+  const lowerIsBetter = ['labor_pct', 'food_cost_pct', 'flm_pct', 'avg_discount']
   return lowerIsBetter.includes(metricKey) ? pctChange < 0 : pctChange > 0
 }
 
@@ -174,7 +189,7 @@ type SingleStoreDateCompareProps = {
   storeColor: string
 }
 
-const COMPARE_METRICS = ['net_sales', 'labor_pct', 'food_cost_pct', 'flm_pct', 'doordash_sales', 'ubereats_sales'] as const
+const COMPARE_METRICS = ['net_sales', 'labor_pct', 'food_cost_pct', 'flm_pct', 'doordash_sales', 'ubereats_sales', 'avg_ticket', 'avg_discount'] as const
 
 export default function SingleStoreDateCompare({
   store,
@@ -275,6 +290,8 @@ export default function SingleStoreDateCompare({
       flm_pct: roundPct(currentStore.flmPct ?? 0),
       doordash_sales: currentStore.dddSales ?? 0,
       ubereats_sales: currentStore.aggregatorSales ?? 0,
+      avg_ticket: currentStore.avgTicket ?? 0,
+      avg_discount: currentStore.avgDiscount ?? 0,
     }
 
     const prevNetSales = prevStore?.netSales ?? prevStore?.lyNetSales ?? 0
@@ -290,6 +307,8 @@ export default function SingleStoreDateCompare({
       flm_pct: roundPct(prevStore?.flmPct ?? 0),
       doordash_sales: prevStore?.dddSales ?? 0,
       ubereats_sales: prevStore?.aggregatorSales ?? 0,
+      avg_ticket: prevStore?.avgTicket ?? 0,
+      avg_discount: prevStore?.avgDiscount ?? 0,
     }
 
     const allMetrics = COMPARE_METRICS.map((key) => {
@@ -331,10 +350,12 @@ export default function SingleStoreDateCompare({
   // Prepare data for metric cards
   const allMetricsWithDetails = useMemo(() => {
     if (!comparisonData) return []
+    const currencyFmt = (v: number) => `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     return COMPARE_METRICS.map((key) => {
       const m = comparisonData.allMetrics.find((x) => x.key === key)
       const metricObj = metrics.find((x) => x.key === key)
-      const label = metricObj?.label ?? key
+      const label = metricObj?.label ?? (key === 'avg_ticket' ? 'Avg Ticket' : key === 'avg_discount' ? 'Avg Discount' : key)
+      const fmt = metricObj?.fmt ?? (key === 'avg_ticket' || key === 'avg_discount' ? currencyFmt : (v: number) => v.toString())
       return {
         key,
         label,
@@ -343,8 +364,8 @@ export default function SingleStoreDateCompare({
         hasPrevious: m?.hasPrevious ?? false,
         pctChange: m?.pctChange ?? 0,
         isImprovement: m?.isImprovement ?? false,
-        unit: metricObj?.unit ?? '$',
-        fmt: metricObj?.fmt ?? ((v: number) => v.toString()),
+        unit: (metricObj?.unit ?? '$') as '$' | '%',
+        fmt,
       }
     })
   }, [comparisonData, metrics])
