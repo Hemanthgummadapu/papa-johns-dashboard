@@ -57,9 +57,7 @@ export async function scrapeExtranet() {
   });
   
   try {
-    // Load storageState if present; `ensureSession` will validate and re-login if needed.
     const hasSessionFile = existsSync(SESSION_FILE)
-    console.log(`[SESSION] Loading session from ${SESSION_FILE}: ${hasSessionFile}`)
     const context = hasSessionFile
       ? await browser.newContext({ storageState: SESSION_FILE })
       : await browser.newContext()
@@ -70,8 +68,6 @@ export async function scrapeExtranet() {
     const storeData = [];
 
     for (const storeId of STORE_IDS) {
-      console.log(`=== Scraping store ${storeId}... ===`);
-
       await page.goto(
         `https://extranet.papajohns.com/kpi/#/realtime?type=STORE_ID&id=${storeId}&view=summary`,
         { waitUntil: 'domcontentloaded', timeout: 30000 }
@@ -79,10 +75,8 @@ export async function scrapeExtranet() {
       await page.waitForTimeout(5000);
 
       const currentUrl = page.url();
-      console.log(`Current URL for store ${storeId}: ${currentUrl}`);
 
       if (currentUrl.includes('login.microsoftonline.com')) {
-        console.log('=== Session expired, deleting session file ===');
         if (existsSync(SESSION_FILE)) {
           unlinkSync(SESSION_FILE);
         }
@@ -99,23 +93,15 @@ export async function scrapeExtranet() {
             session_expired: true,
             updated_at: new Date().toISOString()
           }).eq('id', 'live_kpi');
-        } catch (statusError) {
-          console.error('Failed to update scraper status:', statusError);
+        } catch (_statusError) {
+          // ignore
         }
-        
         throw new Error('SESSION_EXPIRED');
       }
 
       const pageText = await page.evaluate(() => document.body.innerText);
-
-      if (storeId === '2081') {
-        console.log(`=== Store ${storeId} full page text ===`);
-        console.log(pageText);
-      }
-
       const parsed = parseStoreData(storeId, pageText);
       storeData.push(parsed);
-      console.log(`✓ Store ${storeId} scraped successfully`);
     }
 
     return storeData;

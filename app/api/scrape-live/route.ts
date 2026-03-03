@@ -8,9 +8,7 @@ const execAsync = promisify(exec);
 export async function POST() {
   try {
     const scriptPath = path.join(process.cwd(), 'scripts', 'live-scrape-cron.sh');
-    
-    console.log('[scrape-live] Starting live data scrape...');
-    
+
     // Run the script with a 3-minute timeout
     const timeout = 3 * 60 * 1000; // 3 minutes in milliseconds
     
@@ -27,30 +25,24 @@ export async function POST() {
       
       // Race between execution and timeout
       await Promise.race([execPromise, timeoutPromise]);
-      
-      console.log('[scrape-live] ✅ Live data scrape completed successfully');
-      
+
       return NextResponse.json({
         success: true,
         message: 'Live data scrape completed successfully'
       });
     } catch (error: any) {
       if (error.message?.includes('timeout')) {
-        console.error('[scrape-live] ❌ Scrape timed out after 3 minutes');
         return NextResponse.json(
           { success: false, error: 'Scrape timed out after 3 minutes' },
           { status: 408 }
         );
       }
-      
-      console.error('[scrape-live] ❌ Scrape failed:', error.message);
       return NextResponse.json(
         { success: false, error: error.message || 'Scrape failed' },
         { status: 500 }
       );
     }
   } catch (error: any) {
-    console.error('[scrape-live] Error:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Internal server error' },
       { status: 500 }

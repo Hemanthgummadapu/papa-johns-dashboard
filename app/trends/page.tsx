@@ -157,6 +157,20 @@ function getDefaultMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+/** Last fully completed month (excludes current incomplete month). */
+function getLastCompleteMonth(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = d.getMonth() // 0-indexed: Jan=0, Mar=2
+  if (m === 0) return `${y - 1}-12`
+  return `${y}-${String(m).padStart(2, '0')}`
+}
+
+/** Last fully completed week (excludes current incomplete week). */
+function getLastCompleteWeek(): string {
+  return getPrevWeekString(getDefaultWeek())
+}
+
 function getPrevWeeks(current: string, n: number): string[] {
   const [year, weekStr] = current.split('-W')
   const results: string[] = []
@@ -188,6 +202,21 @@ function getPrevMonths(current: string, n: number): string[] {
     }
   }
   return results.reverse()
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** Format YYYY-MM as "Feb 2026". */
+function formatMonthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number)
+  const name = MONTH_NAMES[(m ?? 1) - 1] ?? String(m)
+  return `${name} ${y}`
+}
+
+/** Format week string (e.g. 2026-W09) for footnote. */
+function formatWeekLabel(weekStr: string): string {
+  const [y, w] = weekStr.split('-W')
+  return `Week ${parseInt(w ?? '0', 10)}, ${y}`
 }
 
 function getPrevWeekString(weekStr: string): string {
@@ -429,10 +458,11 @@ export default function TrendsPage() {
 
   const loadChart = useCallback(async () => {
     const config = periodConfig[period]
+    // Exclude current incomplete period: use last complete month/week so chart ends at full data.
     const dates =
       config.period === 'weekly'
-        ? getPrevWeeks(getDefaultWeek(), config.count)
-        : getPrevMonths(getDefaultMonth(), config.count)
+        ? getPrevWeeks(getLastCompleteWeek(), config.count)
+        : getPrevMonths(getLastCompleteMonth(), config.count)
     setLoading(true)
     try {
       const results = await Promise.all(
@@ -446,7 +476,7 @@ export default function TrendsPage() {
         const storesList: CubeStoreRow[] = results[i]?.stores ?? []
         const point: Record<string, number | string> = {
           date: dateStr,
-          label: config.period === 'weekly' ? `W${i + 1}` : dateStr,
+          label: config.period === 'weekly' ? `W${i + 1}` : formatMonthLabel(dateStr),
         }
         storesSelected.forEach((storeNum) => {
           const s = storesList.find((x) => String(x.storeNumber) === storeNum)
@@ -488,7 +518,18 @@ export default function TrendsPage() {
             >
               Dashboard
             </Link>
-            <span className="rounded-md bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white">Trends</span>
+            <Link
+              href="/trends"
+              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              Trends
+            </Link>
+            <Link
+              href="/analytics/profitability"
+              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              Analytics
+            </Link>
             <Link
               href="/dashboard"
               className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
@@ -674,6 +715,20 @@ export default function TrendsPage() {
                 </ComposedChart>
               </ResponsiveContainer>
             )}
+            {!loading && chartData.length > 0 && (() => {
+              const config = periodConfig[period]
+              const lastDate = chartData[chartData.length - 1]?.date as string | undefined
+              const throughLabel = lastDate
+                ? config.period === 'weekly'
+                  ? `Data through ${formatWeekLabel(lastDate)} · Current week excluded`
+                  : `Data through ${formatMonthLabel(lastDate)} · Current month excluded`
+                : null
+              return throughLabel ? (
+                <p className="mt-1 text-[10px] text-[var(--text-tertiary)]" style={{ marginBottom: 0 }}>
+                  {throughLabel}
+                </p>
+              ) : null
+            })()}
           </div>
 
           {/* Store Performance Scorecard — uses same chartData */}

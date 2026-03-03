@@ -11,9 +11,7 @@ export async function setupPeriodSelection(
   period: 'previous' | 'current'
 ): Promise<{ periodStartDate: string | null; periodEndDate: string | null }> {
   const periodLabel = period === 'previous' ? 'Previous Period' : 'Current Period';
-  console.log(`=== Selecting ${period} period ===`);
 
-  // 1. Navigate to dashboard
   await page.goto('https://reporting.smg.com/dashboard.aspx?id=5', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(3000);
 
@@ -90,7 +88,6 @@ export async function setupPeriodSelection(
     const allDates = document.body.innerText.match(/\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4}/g);
     return allDates?.[0] || null;
   });
-  console.log(`=== DATE RANGE FOR ${period}: ${dateRangeText} ===`);
 
   let periodStartDate: string | null = null;
   let periodEndDate: string | null = null;
@@ -111,7 +108,6 @@ export async function setupPeriodSelection(
       
       periodStartDate = parseDate(startStr);
       periodEndDate = parseDate(endStr);
-      console.log(`=== Parsed period dates: ${periodStartDate} to ${periodEndDate} ===`);
     }
   }
 
@@ -158,8 +154,6 @@ export async function scrapeSingleStore(
 
     return 'switched to ' + match.value;
   }, storeId);
-
-  console.log('Store switch:', result);
 
   // Wait for the specific response after store switch
   await page.waitForResponse(
@@ -326,8 +320,7 @@ export async function scrapeSingleStore(
 
   try {
     parsed = await scrapeEvaluate();
-  } catch (err: any) {
-    console.warn('Context reset, retrying...', err.message);
+  } catch (_err: any) {
     await page.waitForTimeout(3000);
     parsed = await scrapeEvaluate();
   }
@@ -355,13 +348,10 @@ export async function scrapeSMG(
   let periodEndDate: string | null = null;
 
   const periodLabel = period === 'previous' ? 'Previous Period' : 'Current Period';
-  console.log(`=== Selecting ${period} period ===`);
 
-  // 1. Navigate to dashboard
   await page.goto('https://reporting.smg.com/dashboard.aspx?id=5', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForTimeout(3000);
 
-  // Check for session expiry
   const isLoginPage = await page.evaluate(() => 
     document.title.includes('Client Access') || 
     (document.body.innerText.includes('Username') && document.body.innerText.includes('Password'))
@@ -370,7 +360,6 @@ export async function scrapeSMG(
     throw new Error('SMG_SESSION_EXPIRED');
   }
 
-  // Verify we're on the right page
   const isOnDashboard = await page.evaluate(() => 
     window.location.href.includes('reporting.smg.com')
   );
@@ -378,7 +367,6 @@ export async function scrapeSMG(
     throw new Error('SMG_SESSION_EXPIRED');
   }
 
-  // 2. Click Change Dates via JS
   await page.evaluate(() => {
     const el = Array.from(document.querySelectorAll('span'))
       .find(s => s.textContent?.trim() === 'Change Dates');
@@ -387,7 +375,6 @@ export async function scrapeSMG(
   });
   await page.waitForTimeout(2000);
 
-  // 3. Select period in #rbDateRangeSEL by label text
   await page.evaluate((label: string) => {
     const select = document.getElementById('rbDateRangeSEL') as HTMLSelectElement;
     if (!select) throw new Error('rbDateRangeSEL not found');
@@ -398,7 +385,6 @@ export async function scrapeSMG(
   }, periodLabel);
   await page.waitForTimeout(500);
 
-  // 4. Click Build Report via JS
   await page.evaluate(() => {
     const el = Array.from(document.querySelectorAll('div, button'))
       .find(e => e.textContent?.trim() === 'Build Report');
@@ -406,7 +392,6 @@ export async function scrapeSMG(
     (el as HTMLElement).click();
   });
 
-  // 5. Wait for jQuery AJAX to complete
   await page.evaluate(() => {
     return new Promise<void>(resolve => {
       const check = () => {
@@ -418,23 +403,18 @@ export async function scrapeSMG(
   });
   await page.waitForTimeout(2000);
 
-  // Extract and parse date range from the page
   const dateRangeText = await page.evaluate(() => {
-    // Look for date range specifically under "Where should I focus?" heading
     const focusSection = Array.from(document.querySelectorAll('*')).find(
       el => el.textContent?.trim() === 'Where should I focus?'
     );
     if (focusSection) {
-      // Look for date range in nearby elements
       const parent = focusSection.closest('section, div, .panel') as HTMLElement | null;
       const dateText = parent?.innerText?.match(/\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4}/)?.[0];
       if (dateText) return dateText;
     }
-    // Fallback — get all date ranges on page and return the first one
     const allDates = document.body.innerText.match(/\d{1,2}\/\d{1,2}\/\d{4}\s*[-–]\s*\d{1,2}\/\d{1,2}\/\d{4}/g);
     return allDates?.[0] || null;
   });
-  console.log(`=== DATE RANGE FOR ${period}: ${dateRangeText} ===`);
 
   // Parse date range into start and end dates
   if (dateRangeText) {
@@ -452,7 +432,6 @@ export async function scrapeSMG(
       
       periodStartDate = parseDate(startStr);
       periodEndDate = parseDate(endStr);
-      console.log(`=== Parsed period dates: ${periodStartDate} to ${periodEndDate} ===`);
     }
   }
 
@@ -465,8 +444,6 @@ export async function scrapeSMG(
 
   // 7. Store loop - fresh query every time
   for (const storeId of STORE_IDS) {
-    console.log(`Scraping SMG store ${storeId}...`);
-    
     // Calculate storeNum (without leading zeros) for use in parsing
     const storeNum = storeId.replace(/^0+/, '');
 
@@ -495,9 +472,7 @@ export async function scrapeSMG(
         return 'switched to ' + match.value;
       }, storeId);
 
-      console.log('Store switch:', result);
-
-      // ✅ ONLY wait you need after switch
+      // Wait after switch
       await page.waitForFunction(() => {
         return (
           (window as any).jQuery &&
@@ -673,8 +648,7 @@ export async function scrapeSMG(
       
       allStoreData.push(storeData);
 
-    } catch (error: any) {
-      console.error(`SMG error ${storeId}:`, error.message);
+    } catch (_error: any) {
       
       // Return minimal error data
       allStoreData.push({

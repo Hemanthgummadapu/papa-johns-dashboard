@@ -39,25 +39,17 @@ export async function POST(request: NextRequest) {
 
     const { simulateEmail, checkGmail, pdfBuffer } = body
 
-    // REAL GMAIL MODE: Check actual Gmail inbox
     if (checkGmail || (!simulateEmail && !contentType.includes('multipart'))) {
-      console.log('=== EMAIL LISTENER: Connecting to Gmail ===')
-
       try {
-        // Step 1: Get ALL PDFs from ALL unread emails in Gmail
-        console.log('=== EMAIL LISTENER: Step 1 - Fetching ALL PDFs from Gmail ===')
         const emailsWithPDFs = await fetchAllPDFsFromGmail()
 
         if (!emailsWithPDFs || emailsWithPDFs.length === 0) {
-          console.log('=== EMAIL LISTENER: No PDFs found in Gmail ===')
           return NextResponse.json({
             success: false,
             message: 'No unread emails with PDF attachments found',
             emailsProcessed: 0,
           })
         }
-
-        console.log(`=== EMAIL LISTENER: Found ${emailsWithPDFs.length} PDF(s) in unread emails ===`)
 
         const useSupabase = isSupabaseConfigured()
         const processedResults: any[] = []
@@ -67,30 +59,17 @@ export async function POST(request: NextRequest) {
         // Process each PDF
         for (let i = 0; i < emailsWithPDFs.length; i++) {
           const email = emailsWithPDFs[i]
-          console.log(`=== EMAIL LISTENER: Processing PDF ${i + 1}/${emailsWithPDFs.length} ===`)
-          console.log('Email subject:', email.subject)
-          console.log('PDF filename:', email.filename)
-          console.log('PDF size:', email.pdfBuffer.length, 'bytes')
-
           let parsedData: any = null
           let logEntry: any = null
           let sheetResult: any = null
 
           try {
-            // Step 2: Parse the PDF
-            console.log('=== EMAIL LISTENER: Step 2 - Parsing PDF ===')
             try {
               parsedData = await parsePapaJohnsPDF(email.pdfBuffer)
-              console.log('=== EMAIL LISTENER: PDF parsed successfully ===')
-              console.log('Parsed data:', JSON.stringify(parsedData, null, 2))
-
               if (!parsedData || !parsedData.store_number) {
                 throw new Error('PDF parsing failed: Could not extract store number or other required fields')
               }
             } catch (parseError: any) {
-              console.error('=== EMAIL LISTENER: PDF PARSE ERROR ===')
-              console.error('Error message:', parseError.message)
-              console.error('Error stack:', parseError.stack)
               errorCount++
               processedResults.push({
                 emailSubject: email.subject,
@@ -102,10 +81,8 @@ export async function POST(request: NextRequest) {
               continue // Skip to next PDF
             }
 
-            // Create automation log entry
             if (useSupabase) {
               try {
-                console.log('=== EMAIL LISTENER: Creating automation log entry ===')
                 const supabaseAdmin = getSupabaseAdminClient()
                 const { data, error } = await supabaseAdmin
                   .from('automation_log')
@@ -119,20 +96,11 @@ export async function POST(request: NextRequest) {
                   })
                   .select()
                   .single()
-
-                if (!error) {
-                  logEntry = data
-                  console.log('=== EMAIL LISTENER: Log entry created ===', logEntry.id)
-                } else {
-                  console.warn('=== EMAIL LISTENER: Failed to create log entry ===', error)
-                }
-              } catch (err: any) {
-                console.warn('=== EMAIL LISTENER: Log entry error ===', err.message)
+                if (!error) logEntry = data
+              } catch (_err: any) {
+                // ignore
               }
             }
-
-            // Step 3: Write to Google Sheets
-            console.log('=== EMAIL LISTENER: Step 3 - Writing to Google Sheets ===')
             try {
               sheetResult = await appendToSheet({
                 store_number: parsedData.store_number,
@@ -146,16 +114,10 @@ export async function POST(request: NextRequest) {
                 doordash_sales: parsedData.doordash_sales,
                 ubereats_sales: parsedData.ubereats_sales,
               })
-
-              console.log('=== EMAIL LISTENER: Sheet write result ===', JSON.stringify(sheetResult, null, 2))
             } catch (sheetError: any) {
-              console.error('=== EMAIL LISTENER: SHEET WRITE ERROR ===')
-              console.error('Error message:', sheetError.message)
-              console.error('Error stack:', sheetError.stack)
               sheetResult = { success: false, error: sheetError.message }
             }
 
-            // Update log entry
             if (logEntry && useSupabase) {
               try {
                 const supabaseAdmin = getSupabaseAdminClient()
@@ -167,9 +129,8 @@ export async function POST(request: NextRequest) {
                     error_message: sheetResult?.error || null,
                   })
                   .eq('id', logEntry.id)
-                console.log('=== EMAIL LISTENER: Log entry updated ===')
-              } catch (err: any) {
-                console.warn('=== EMAIL LISTENER: Failed to update log entry ===', err.message)
+              } catch (_err: any) {
+                // ignore
               }
             }
 
@@ -188,10 +149,7 @@ export async function POST(request: NextRequest) {
               error: sheetResult?.error || null,
               data: parsedData,
             })
-
-            console.log(`=== EMAIL LISTENER: PDF ${i + 1}/${emailsWithPDFs.length} processed ===`)
           } catch (error: any) {
-            console.error(`=== EMAIL LISTENER: Error processing PDF ${i + 1} ===`, error)
             errorCount++
             processedResults.push({
               emailSubject: email.subject,
@@ -213,17 +171,8 @@ export async function POST(request: NextRequest) {
           sheetUrl: getSheetUrl(),
         }
 
-        console.log('=== EMAIL LISTENER: Returning response ===')
-        console.log('Response:', JSON.stringify(response, null, 2))
-
         return NextResponse.json(response)
       } catch (gmailError: any) {
-        console.error('=== EMAIL LISTENER: GMAIL ERROR ===')
-        console.error('Error message:', gmailError.message)
-        console.error('Error stack:', gmailError.stack)
-        console.error('Error name:', gmailError.name)
-        console.error('Full error object:', gmailError)
-        
         return NextResponse.json(
           {
             success: false,
@@ -250,12 +199,9 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'No PDF file provided' }, { status: 400 })
         }
 
-        console.log('=== EMAIL LISTENER: Demo mode - PDF file upload ===')
         const arrayBuffer = await pdfFile.arrayBuffer()
         pdfBufferToParse = Buffer.from(arrayBuffer)
       } else if (pdfBuffer) {
-        // Handle base64 PDF buffer
-        console.log('=== EMAIL LISTENER: Demo mode - PDF buffer ===')
         pdfBufferToParse = Buffer.from(pdfBuffer, 'base64')
       } else {
         return NextResponse.json(
@@ -292,7 +238,6 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     )
   } catch (error: any) {
-    console.error('=== EMAIL LISTENER: Error ===', error)
     return NextResponse.json(
       { error: error?.message || 'Failed to process email listener request' },
       { status: 500 }

@@ -11,14 +11,7 @@ export async function GET() {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    console.log('[live-data] SUPABASE_URL:', url?.slice(0, 40));
-    console.log('[live-data] HAS_SERVICE_KEY:', !!serviceKey);
-
     if (!url || !serviceKey) {
-      console.error('[live-data API] Missing Supabase env vars:', {
-        hasUrl: !!url,
-        hasKey: !!serviceKey,
-      });
       return NextResponse.json(
         { success: false, error: 'Missing Supabase configuration', data: [] },
         { 
@@ -44,12 +37,7 @@ export async function GET() {
       .order('scraped_at', { ascending: false })
       .limit(100);
 
-    // Debug logs
-    console.log('[live-data] newest record:', data?.[0]?.scraped_at, data?.[0]?.store_number);
-    console.log('[live-data] total records:', data?.length);
-    
     if (queryError) {
-      console.error('[live-data API] Query error:', queryError);
       return NextResponse.json(
         { success: false, error: queryError.message, data: [] },
         { 
@@ -63,7 +51,6 @@ export async function GET() {
     }
     
     if (!data || !Array.isArray(data) || data.length === 0) {
-      console.log('[live-data API] No data returned - returning empty response');
       return NextResponse.json({
         success: true,
         data: [],

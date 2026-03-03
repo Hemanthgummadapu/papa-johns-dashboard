@@ -7,8 +7,6 @@ import { NextResponse } from 'next/server'
  */
 export async function GET() {
   try {
-    console.log('=== TEST SHEETS: Starting test ===')
-    
     const result = await appendToSheet({
       store_number: 'TEST',
       date_start: '2026-01-08',
@@ -21,9 +19,6 @@ export async function GET() {
       doordash_sales: 6605.39,
       ubereats_sales: 5805.85,
     })
-    
-    console.log('=== TEST SHEETS: Result ===', result)
-    
     if (result.success) {
       return NextResponse.json({ 
         success: true, 

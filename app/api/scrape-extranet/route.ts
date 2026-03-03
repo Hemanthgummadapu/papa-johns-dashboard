@@ -4,7 +4,6 @@ import { getSupabaseAdminClient } from '@/lib/db';
 
 export async function GET() {
   try {
-    console.log('Starting extranet scrape...');
     const storeData = await scrapeExtranet();
     
     // Save to cache
@@ -50,16 +49,10 @@ export async function GET() {
           });
         
         if (error) {
-          console.error(`❌ Error saving store ${store.store_number} to Supabase:`, error.message);
-          console.error('Error details:', JSON.stringify(error, null, 2));
-        } else {
-          console.log(`✅ Saved store ${store.store_number} to Supabase`);
+          // Non-fatal: continue with other stores
         }
       }
-      
-      console.log(`✅ Saved ${storeData.length} stores to Supabase`);
-    } catch (dbError: any) {
-      console.error('Error saving to Supabase (non-fatal):', dbError.message);
+    } catch (_dbError: any) {
       // Don't fail the request if DB save fails
     }
     
@@ -69,7 +62,6 @@ export async function GET() {
       data: storeData 
     });
   } catch (error: any) {
-    console.error('Scrape error:', error);
     return Response.json({ 
       success: false, 
       error: error.message 

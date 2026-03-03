@@ -1055,8 +1055,7 @@ async function fetchReports(days: number): Promise<{ data: DailyReportWithStore[
       return { data: [], isRealData: false }
     }
     return { data, isRealData: data.length > 0 }
-  } catch (error) {
-    console.warn('Failed to fetch from API:', error)
+  } catch (_error) {
     return { data: [], isRealData: false }
   }
 }
@@ -1197,8 +1196,7 @@ async function fetchCubeData(date: string, period: CubePeriod): Promise<{ data: 
         } as DailyReportWithStore
       })
     return { data: reports, isRealData: true, date, cubeStores: json.stores }
-  } catch (error) {
-    console.warn('Failed to fetch from cube:', error)
+  } catch (_error) {
     return { data: [], isRealData: false, date, cubeOffline: true, cubeStores: undefined }
   }
 }
@@ -1495,7 +1493,6 @@ export default function DashboardPage() {
 
           // When we transition from >0 to <=0, trigger an immediate refresh
           if (prev > 0 && newCountdown <= 0) {
-            console.log('[Live] Countdown reached 0, auto-refreshing data...')
             void fetchLiveData()
           }
 
@@ -1510,7 +1507,6 @@ export default function DashboardPage() {
     // Set up a 15-minute polling interval to auto-refresh data (backup)
     const autoRefreshInterval = setInterval(() => {
       if (activeTab === 'live') {
-        console.log('[Live] 15-minute auto-poll triggered')
         void fetchLiveData()
       }
     }, 15 * 60 * 1000) // 15 minutes
@@ -1892,6 +1888,23 @@ export default function DashboardPage() {
               className="tab-btn"
             >
               Trends
+            </Link>
+            <Link
+              href="/analytics/profitability"
+              style={{
+                padding: '8px 16px',
+                borderRadius: 8,
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                background: 'transparent',
+                color: 'var(--text-tertiary)',
+                textDecoration: 'none',
+              }}
+              className="tab-btn"
+            >
+              Analytics
             </Link>
             {[
               ['live', 'Live'],

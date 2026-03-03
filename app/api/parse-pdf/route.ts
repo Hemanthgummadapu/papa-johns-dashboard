@@ -134,7 +134,6 @@ export async function POST(request: NextRequest) {
           if (error) throw error
 
           // Also write to Google Sheets
-          console.log('=== PARSE PDF: Calling appendToSheet ===')
           let sheetResult
           try {
             sheetResult = await appendToSheet({
@@ -149,9 +148,7 @@ export async function POST(request: NextRequest) {
               doordash_sales: metrics.doordash_sales,
               ubereats_sales: metrics.ubereats_sales,
             })
-            console.log('=== PARSE PDF: appendToSheet completed ===', sheetResult)
           } catch (err: any) {
-            console.error('=== PARSE PDF: Sheet write failed ===', err.message)
             sheetResult = { success: false, error: err.message }
           }
 
@@ -191,7 +188,6 @@ export async function POST(request: NextRequest) {
           if (error) throw error
 
           // Also write to Google Sheets
-          console.log('=== PARSE PDF: Calling appendToSheet ===')
           let sheetResult
           try {
             sheetResult = await appendToSheet({
@@ -206,9 +202,7 @@ export async function POST(request: NextRequest) {
               doordash_sales: metrics.doordash_sales,
               ubereats_sales: metrics.ubereats_sales,
             })
-            console.log('=== PARSE PDF: appendToSheet completed ===', sheetResult)
           } catch (err: any) {
-            console.error('=== PARSE PDF: Sheet write failed ===', err.message)
             sheetResult = { success: false, error: err.message }
           }
 
@@ -226,10 +220,8 @@ export async function POST(request: NextRequest) {
             },
           })
         }
-      } catch (supabaseError: any) {
+      } catch (_supabaseError: any) {
         // If Supabase fails, fall back to memory storage
-        console.warn('Supabase operation failed, using memory storage:', supabaseError.message)
-        // Continue to memory storage below
       }
     }
 
@@ -264,7 +256,6 @@ export async function POST(request: NextRequest) {
     const result = addReportToMemory(memoryReport)
 
     // Also try to write to Google Sheets even if using memory storage
-    console.log('=== PARSE PDF (memory): Calling appendToSheet ===')
     let sheetResult
     try {
       sheetResult = await appendToSheet({
@@ -279,9 +270,7 @@ export async function POST(request: NextRequest) {
         doordash_sales: metrics.doordash_sales,
         ubereats_sales: metrics.ubereats_sales,
       })
-      console.log('=== PARSE PDF (memory): appendToSheet completed ===', sheetResult)
     } catch (err: any) {
-      console.error('=== PARSE PDF (memory): Sheet write failed ===', err.message)
       sheetResult = { success: false, error: err.message }
     }
 
@@ -300,7 +289,6 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     const msg = error instanceof Error ? error.message : String(error)
-    console.error('Error parsing PDF:', error)
     return NextResponse.json(
       { error: msg || 'Failed to parse PDF' },
       { status: 500 }

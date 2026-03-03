@@ -39,7 +39,6 @@ export async function getSMGAuthenticatedPage(): Promise<{ browser: Browser; con
       throw new Error('SMG session expired — run npx tsx scripts/smg-login.ts');
     }
 
-    console.log('=== SMG session verified ===');
     return { browser, context, page };
   } catch (error: any) {
     await browser.close();

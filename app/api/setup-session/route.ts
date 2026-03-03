@@ -10,15 +10,9 @@ export async function GET() {
 
   try {
     await page.goto('https://extranet.papajohns.com');
-    console.log('=== MANUAL LOGIN REQUIRED - Complete MFA in the browser window ===');
-    console.log('=== You have 120 seconds ===');
-    
     await page.waitForURL('**/extranet.papajohns.com/**', { timeout: 120000 });
     await page.waitForTimeout(3000);
-    
     await context.storageState({ path: './extranet-session.json' });
-    console.log('=== Session saved! ===');
-    
     await browser.close();
     
     return Response.json({ 

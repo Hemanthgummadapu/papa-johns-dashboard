@@ -36,8 +36,6 @@ export async function GET(request: Request) {
     whereClause = `[Calendar].[Calendar Date].&[${date}]`
   }
 
-  console.log('[Cube API] Period:', period, '| Date:', date, '| WHERE:', whereClause)
-
   const CUBE_TIMEOUT_MS = 8000
 
   try {
@@ -152,10 +150,7 @@ export async function GET(request: Request) {
     })
 
     return NextResponse.json({ success: true, date, period, stores: result })
-  } catch (error: unknown) {
-    const err = error as NodeJS.ErrnoException
-    console.warn('[Cube API] Cube unreachable:', err?.code ?? err?.message)
-
+  } catch (_error: unknown) {
     return NextResponse.json(
       {
         success: false,

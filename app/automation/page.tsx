@@ -98,35 +98,24 @@ export default function AutomationPage() {
       )
     }
 
-    // Check Gmail for new emails with PDF attachments
     try {
-      console.log('=== MANUAL CHECK: Checking Gmail for new reports ===')
-
       const res = await fetch('/api/email-listener', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          checkGmail: true, // This triggers real Gmail check
+          checkGmail: true,
         }),
       })
 
       const result = await res.json()
-      console.log('=== MANUAL CHECK: Result ===', JSON.stringify(result, null, 2))
 
       if (res.ok && result.success) {
         await fetchLogs()
-        console.log('=== MANUAL CHECK: Success - Sheet updated ===')
         alert(`✓ Success! ${result.message || 'Report processed and written to Google Sheets'}`)
       } else {
-        console.error('=== MANUAL CHECK: Failed ===')
-        console.error('Error:', result.error)
-        console.error('Message:', result.message)
-        console.error('Details:', result.details)
-        console.error('Step:', result.step)
         alert(`Manual check failed: ${result.error || result.message || 'Unknown error'}\n\nDetails: ${result.details || 'No additional details'}`)
       }
     } catch (error: any) {
-      console.error('=== MANUAL CHECK: Error ===', error)
       alert(`Manual check failed: ${error.message || 'Unknown error'}`)
     } finally {
       setIsProcessing(false)
@@ -173,9 +162,6 @@ export default function AutomationPage() {
 
       // Convert base64 data URL to base64 string (remove data:application/pdf;base64, prefix)
       const base64String = pdfBase64.includes(',') ? pdfBase64.split(',')[1] : pdfBase64
-
-      console.log('=== DEMO: Sending PDF to email listener ===')
-      console.log('PDF size:', base64String.length, 'characters (base64)')
 
       const res = await fetch('/api/email-listener', {
         method: 'POST',

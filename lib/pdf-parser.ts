@@ -18,31 +18,15 @@ export interface ParsedMetrics {
  * Uses exact regex patterns to match PDF text format
  */
 export async function parsePapaJohnsPDF(pdfBuffer: Buffer): Promise<ParsedMetrics> {
-  console.log('=== PDF PARSER: Starting parse ===')
-  console.log('Buffer size:', pdfBuffer.length, 'bytes')
-  console.log('Buffer type:', Buffer.isBuffer(pdfBuffer) ? 'Buffer' : typeof pdfBuffer)
-
   let data: any
   let text: string
 
   try {
-    console.log('=== PDF PARSER: Calling pdfParse ===')
     data = await pdfParse(pdfBuffer)
     text = data.text
-    console.log('=== PDF PARSER: pdfParse completed ===')
-    console.log('Text length:', text.length, 'characters')
   } catch (parseError: any) {
-    console.error('=== PDF PARSER: pdfParse ERROR ===')
-    console.error('Error message:', parseError.message)
-    console.error('Error stack:', parseError.stack)
     throw new Error(`Failed to parse PDF: ${parseError.message}`)
   }
-
-  // Debug: Log PDF text sample
-  console.log('=== PDF PARSER: PDF Text Sample (first 300 chars) ===')
-  console.log(text.substring(0, 300))
-  console.log('=== PDF PARSER: PDF Text Sample (last 300 chars) ===')
-  console.log(text.substring(Math.max(0, text.length - 300)))
 
   // Define exact regex patterns based on actual PDF format
   const patterns = {
@@ -58,38 +42,22 @@ export async function parsePapaJohnsPDF(pdfBuffer: Buffer): Promise<ParsedMetric
     date_end: /\d{2}\/\d{2}\/\d{4}\s*-\s*(\d{2}\/\d{2}\/\d{4})/i,
   }
 
-  // Debug: Log regex match results
-  console.log('=== PDF PARSER: Regex Results ===')
   const matches: Record<string, string | null> = {}
   Object.entries(patterns).forEach(([key, pattern]) => {
     const match = text.match(pattern)
-    const value = match ? match[1] : null
-    matches[key] = value
-    console.log(`${key}:`, value || 'NOT FOUND')
+    matches[key] = match ? match[1] : null
   })
 
-  // Extract store number: PAPA JOHNS PIZZA - RESTAURANT 2081
-  console.log('=== PDF PARSER: Searching for store number ===')
   const storeNumberMatch = text.match(patterns.store_number)
-  console.log('Store number match (PAPA JOHNS pattern):', storeNumberMatch)
-  
   let store_number: string
-  
+
   if (storeNumberMatch) {
     store_number = storeNumberMatch[1]
-    console.log('=== PDF PARSER: Store number found ===', store_number)
   } else {
-    // Fallback: try old pattern
-    console.log('=== PDF PARSER: Trying fallback store number pattern ===')
     const fallbackMatch = text.match(/RESTAURANT\s+(\d+)/i)
-    console.log('Store number match (fallback):', fallbackMatch)
-    
     if (!fallbackMatch) {
-      console.error('=== PDF PARSER: Store number not found ===')
-      console.error('PDF text sample around "RESTAURANT":', text.match(/RESTAURANT[\s\S]{0,100}/i)?.[0])
       throw new Error('Could not find store number in PDF. Expected "PAPA JOHNS PIZZA - RESTAURANT 2081" or "RESTAURANT 2081"')
     }
-    console.warn('=== PDF PARSER: Using fallback store number pattern ===')
     store_number = fallbackMatch[1]
   }
 
@@ -101,10 +69,8 @@ export async function parsePapaJohnsPDF(pdfBuffer: Buffer): Promise<ParsedMetric
     // Fallback: try alternative date pattern
     const fallbackDateMatch = text.match(/(\d{2}\/\d{2}\/\d{4})\s*-\s*(\d{2}\/\d{2}\/\d{4})/i)
     if (!fallbackDateMatch) {
-      console.error('=== PDF PARSER: Date range not found ===')
       throw new Error('Could not find date range in PDF')
     }
-    console.warn('=== PDF PARSER: Using fallback date pattern ===')
   }
 
   // Convert MM/DD/YYYY to YYYY-MM-DD
@@ -170,9 +136,6 @@ export async function parsePapaJohnsPDF(pdfBuffer: Buffer): Promise<ParsedMetric
     doordash_sales,
     ubereats_sales,
   }
-
-  console.log('=== PDF PARSER: Final parsed result ===')
-  console.log(JSON.stringify(result, null, 2))
 
   return result
 }

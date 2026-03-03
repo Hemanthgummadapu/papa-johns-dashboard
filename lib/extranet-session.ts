@@ -56,16 +56,13 @@ async function freshLogin(page: Page) {
   await page.waitForSelector('input[type="password"]', { timeout: 30000 })
   await page.fill('input[type="password"]', process.env.PAPAJOHNS_EXTRANET_PASSWORD || '')
   await page.click('input[type="submit"]')
-  console.log('[SESSION] Submitted credentials, waiting for login to complete…')
 
   // Wait for "Stay signed in?" prompt and click Yes if it appears (wait up to 8 seconds)
   try {
     await page.waitForSelector('#idSIButton9', { timeout: 8000 }) // Yes button
     await page.click('#idSIButton9') // Click "Yes"
-    console.log('[SESSION] Clicked "Stay signed in"')
   } catch {
     // No prompt
-    console.log('[SESSION] No "Stay signed in" prompt found')
   }
 
   // Do not rely on a specific redirect URL here; the AAD → extranet redirect chain varies
@@ -89,15 +86,8 @@ export async function ensureSession(page: Page, context: BrowserContext) {
 
   const hasSession = existsSync(EXTRANET_SESSION_PATH)
   if (hasSession) {
-    console.log(`[SESSION] session.json exists: true at ${EXTRANET_SESSION_PATH}`)
-    console.log('[SESSION] Loaded existing session')
-    // With a manually curated session.json (via npm run reauth), we trust the session on start.
-    // Expiry is detected later when store pages redirect to Microsoft login, at which point
-    // the scraper deletes session.json and surfaces SESSION_EXPIRED.
     return
   }
-
-  console.log('[SESSION] session.json exists: false — performing fresh login')
 
   // Use a dedicated login page so the scraper's `page` remains stable even if the
   // identity provider opens/closes tabs during the redirect chain.
@@ -108,16 +98,11 @@ export async function ensureSession(page: Page, context: BrowserContext) {
     await loginPage.close().catch(() => {})
   }
 
-  // After submitting credentials, validate by waiting for a known logged-in marker on the KPI page.
-  // If it never appears, surface a clear error for operations.
-  console.log('[SESSION] Waiting for authenticated dashboard…')
   const ok = await validateLoggedIn(page, 90000)
   if (!ok) {
-    console.log(`[SESSION] Login validation failed at URL: ${page.url()}`)
     throw new Error('Login failed — check credentials or site is blocking')
   }
 
   await context.storageState({ path: EXTRANET_SESSION_PATH })
-  console.log('[SESSION] Saved new session')
 }
 
