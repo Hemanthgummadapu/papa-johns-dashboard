@@ -32,11 +32,11 @@ async function runJob(jobName) {
   }
 }
 
-// Cron: PJ Extranet 6am daily
-cron.schedule('0 6 * * *', () => runJob('pjExtranet'), { timezone: 'America/Chicago' });
+// Cron: PJ Extranet every 15 minutes
+cron.schedule('*/15 * * * *', () => runJob('pjExtranet'), { timezone: 'America/Chicago' });
 
-// Cron: SMG 7am daily
-cron.schedule('0 7 * * *', () => runJob('smg'), { timezone: 'America/Chicago' });
+// Cron: SMG every 5 hours
+cron.schedule('0 */5 * * *', () => runJob('smg'), { timezone: 'America/Chicago' });
 
 // Cron: Cube refresh every hour
 cron.schedule('0 * * * *', () => runJob('cubeRefresh'), { timezone: 'America/Chicago' });
@@ -89,6 +89,7 @@ app.post('/run/:job', requireApiKey, async (req, res) => {
 app.use(express.json());
 
 async function start() {
+  console.log('Scraper starting. NEXTJS_URL:', process.env.NEXTJS_URL);
   if (process.env.DATABASE_URL) {
     try {
       await initTables();

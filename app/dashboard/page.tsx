@@ -1301,6 +1301,7 @@ export default function DashboardPage() {
   const [liveStalenessTick, setLiveStalenessTick] = useState(0)
   const [selectedStore, setSelectedStore] = useState<any>(null)
   const [showStoreModal, setShowStoreModal] = useState(false)
+  const [sessionExpired, setSessionExpired] = useState(false)
   
   // Guest Experience (SMG) - Disabled
   // State kept minimal to prevent errors, but feature is disabled
@@ -1327,6 +1328,27 @@ export default function DashboardPage() {
       setLoading(false)
     }
   }
+
+  // Check scraper session status (Microsoft / extranet)
+  useEffect(() => {
+    const checkScraperStatus = async () => {
+      try {
+        const res = await fetch('/api/scraper-status', { cache: 'no-store' })
+        const json = await res.json()
+
+        const expired =
+          json?.session_expired === true ||
+          json?.live?.session_expired === true ||
+          json?.smg?.session_expired === true
+
+        setSessionExpired(Boolean(expired))
+      } catch (err) {
+        console.error('Failed to fetch scraper status:', err)
+      }
+    }
+
+    void checkScraperStatus()
+  }, [])
 
   const loadCubeData = async (overrideDate?: string, overridePeriod?: CubePeriod) => {
     setCubeLoading(true)
@@ -1823,6 +1845,25 @@ export default function DashboardPage() {
 
   return (
     <div style={{ background: 'var(--bg-base, #0a0b0f)', minHeight: '100vh', color: 'var(--text-primary, #f1f3f9)' }}>
+      {sessionExpired && (
+        <div
+          onClick={() => {
+            window.location.href = '/api/reauth/live'
+          }}
+          style={{
+            backgroundColor: '#b91c1c',
+            color: '#fef2f2',
+            padding: '10px 24px',
+            textAlign: 'center',
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: 'pointer',
+          }}
+        >
+          ⚠️ Microsoft session expired — extranet login required. Click here to re-authenticate.
+        </div>
+      )}
       {/* Header */}
       <div style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)', padding: '0 32px' }}>
         <div style={{ maxWidth: 1400, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
