@@ -1,8 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Do not set output: 'export' — that forces full static export and breaks API routes
-  output: undefined,
-}
+  output: 'standalone',
+};
 
-module.exports = nextConfig
-
+module.exports = nextConfig;

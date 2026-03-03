@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start -p $PORT -H 0.0.0.0",
+    "start": "node .next/standalone/server.js",
     "lint": "next lint",
     "seed": "tsx scripts/seed.ts",
     "setup": "bash scripts/setup-supabase.sh",
