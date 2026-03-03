@@ -74,7 +74,10 @@ export async function scrapeExtranet() {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(6000);
         pageText = await page.evaluate(() => document.body.innerText);
-        if (pageText.includes(storeId)) break;
+        if (pageText.includes(storeId)) {
+          console.log(`Store ${storeId} loaded on attempt ${attempt + 1}`);
+          break;
+        }
         console.log(`Store ${storeId} not loaded on attempt ${attempt + 1}, retrying...`);
         await page.waitForTimeout(3000);
       }
