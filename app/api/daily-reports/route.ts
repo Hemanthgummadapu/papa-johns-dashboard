@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdminClient } from '@/lib/db'
 import { getReportsFromMemory } from '@/lib/memory-store'
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Check if Supabase is configured
  */

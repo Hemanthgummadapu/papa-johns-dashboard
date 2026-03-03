@@ -5,6 +5,8 @@ import { addReportToMemory } from '@/lib/memory-store'
 import { appendToSheet, getSheetUrl } from '@/lib/gsheets'
 import type { DailyReportWithStore } from '@/lib/db'
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Check if Supabase is configured
  */

@@ -1,6 +1,8 @@
 import { appendToSheet } from '@/lib/gsheets'
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/test-sheets
  * Test endpoint to verify Google Sheets integration

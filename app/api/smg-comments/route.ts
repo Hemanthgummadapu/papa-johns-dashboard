@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseAdminClient } from '@/lib/db'
 
+export const dynamic = 'force-dynamic';
+
 // Helper function to check if text looks like CSS/HTML code
 function isCSSOrHTMLCode(text: string | null): boolean {
   if (!text) return false

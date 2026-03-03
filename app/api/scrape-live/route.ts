@@ -5,6 +5,8 @@ import path from 'path';
 
 const execAsync = promisify(exec);
 
+export const dynamic = 'force-dynamic';
+
 export async function POST() {
   try {
     const scriptPath = path.join(process.cwd(), 'scripts', 'live-scrape-cron.sh');

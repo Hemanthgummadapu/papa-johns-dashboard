@@ -1,5 +1,7 @@
 import { scrapeExtranet } from '@/lib/extranet-scraper';
 
+export const dynamic = 'force-dynamic';
+
 // Main cron - runs every 15 minutes for extranet data
 export async function GET() {
   try {

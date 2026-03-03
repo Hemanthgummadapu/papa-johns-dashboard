@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getSupabaseAdminClient } from '@/lib/db'
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Check if Supabase is configured
  */

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import https from 'https'
 
+export const dynamic = 'force-dynamic';
+
 function getDefaultDate(): string {
   const d = new Date()
   d.setDate(d.getDate() - 1)

@@ -2,6 +2,8 @@ import { scrapeExtranet } from '@/lib/extranet-scraper';
 import { setCachedData } from '@/lib/store-cache';
 import { getSupabaseAdminClient } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const storeData = await scrapeExtranet();

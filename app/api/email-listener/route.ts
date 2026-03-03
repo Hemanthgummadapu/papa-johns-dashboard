@@ -17,6 +17,8 @@ function isSupabaseConfigured(): boolean {
   }
 }
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/email-listener
  * 

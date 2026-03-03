@@ -3,6 +3,8 @@
 // Used for initial setup or re-authentication when session expires
 import { chromium } from 'playwright';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const browser = await chromium.launch({ headless: false });
   const context = await browser.newContext();
