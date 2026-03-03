@@ -1,12 +1,5 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+export { default } from 'next-auth/middleware'
 
-// Temporarily disabled to diagnose "Application failed to respond"
-// Redirect and matcher commented out — middleware now pass-through only.
-export function middleware(_request: NextRequest) {
-  return NextResponse.next()
+export const config = {
+  matcher: ['/((?!api/auth|_next/static|_next/image|favicon.ico).*)'],
 }
-
-// export const config = {
-//   matcher: ['/((?!_next|api|favicon.ico).*)'],
-// }
