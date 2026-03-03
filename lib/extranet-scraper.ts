@@ -68,11 +68,16 @@ export async function scrapeExtranet() {
     const storeData = [];
 
     for (const storeId of STORE_IDS) {
-      await page.goto(
-        `https://extranet.papajohns.com/kpi/#/realtime?type=STORE_ID&id=${storeId}&view=summary`,
-        { waitUntil: 'domcontentloaded', timeout: 30000 }
-      );
-      await page.waitForTimeout(5000);
+      const url = `https://extranet.papajohns.com/kpi/#/realtime?type=STORE_ID&id=${storeId}&view=summary`;
+      let pageText = '';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(6000);
+        pageText = await page.evaluate(() => document.body.innerText);
+        if (pageText.includes(storeId)) break;
+        console.log(`Store ${storeId} not loaded on attempt ${attempt + 1}, retrying...`);
+        await page.waitForTimeout(3000);
+      }
 
       const currentUrl = page.url();
 
@@ -99,7 +104,6 @@ export async function scrapeExtranet() {
         throw new Error('SESSION_EXPIRED');
       }
 
-      const pageText = await page.evaluate(() => document.body.innerText);
       const parsed = parseStoreData(storeId, pageText);
       storeData.push(parsed);
     }
