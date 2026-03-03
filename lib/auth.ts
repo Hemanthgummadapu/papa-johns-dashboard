@@ -10,7 +10,10 @@ export const authOptions: NextAuthOptions = {
   ],
   secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: 'jwt' },
-  pages: {
-    signIn: '/api/auth/signin',
+  callbacks: {
+    async signIn({ user }) {
+      const allowedEmails = process.env.ALLOWED_EMAILS?.split(',') ?? []
+      return allowedEmails.includes(user.email ?? '')
+    },
   },
 }
