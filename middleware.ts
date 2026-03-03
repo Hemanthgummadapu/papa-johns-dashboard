@@ -3,9 +3,11 @@ import type { NextRequest } from 'next/server'
 
 export function middleware(request: NextRequest) {
   if (request.nextUrl.pathname === '/') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url, 307)
+    return NextResponse.redirect(new URL('/dashboard', request.url), 307)
   }
   return NextResponse.next()
+}
+
+export const config = {
+  matcher: ['/((?!_next|api|favicon.ico).*)'],
 }
