@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import ScraperStatusBar from '@/components/ScraperStatusBar'
+import { Providers } from '@/components/Providers'
 
 export const metadata: Metadata = {
   title: 'Papa Johns Dashboard',
@@ -20,9 +21,11 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>
-        <ScraperStatusBar />
-        {children}
+      <body style={{ background: '#0a0b0f', color: '#f1f3f9' }}>
+        <Providers>
+          <ScraperStatusBar />
+          {children}
+        </Providers>
       </body>
     </html>
   )

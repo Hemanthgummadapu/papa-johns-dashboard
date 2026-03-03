@@ -63,8 +63,8 @@
 }
 
 body {
-  color: var(--text-primary);
-  background: var(--bg-base);
+  color: var(--text-primary, #f1f3f9);
+  background: var(--bg-base, #0a0b0f);
   min-height: 100vh;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
