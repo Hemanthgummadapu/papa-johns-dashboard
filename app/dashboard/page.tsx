@@ -80,6 +80,38 @@ type CubeStoreRow = {
   carryoutPct?: number
   deliveryPct?: number
   onlinePct?: number
+  // VBO catalog
+  voidMadeOrders?: number | null
+  voidMadeAmountUsd?: number | null
+  voidMadePctNetSalesUsd?: number | null
+  cashOverShortUsd?: number | null
+  totalDiscountsUsd?: number | null
+  highDiscountAmountUsd?: number | null
+  highDiscPctNetSalesUsd?: number | null
+  overtimeHours?: number | null
+  totalHoursWorked?: number | null
+  // ProfitKeeper catalog
+  totalLabor?: number | null
+  totalLaborPct?: number | null
+  totalLaborOtHours?: number | null
+  actualFoodCostUsd?: number | null
+  actualFoodPct?: number | null
+  targetFoodCostUsd?: number | null
+  targetFoodPct?: number | null
+  foodVariancePct?: number | null
+  bozocoroNetSalesUsd?: number | null
+  badOrderNetSalesUsd?: number | null
+  zeroedOrders?: number | null
+  cancelledOrderNetSalesUsd?: number | null
+  refundedOrders?: number | null
+  doorDashDeliveryPct?: number | null
+  aggregatorFeesCommissionsPct?: number | null
+  restaurantLevelEbitda?: number | null
+  // Offers catalog
+  offerDiscountAmountUsd?: number | null
+  averageDiscountUsd?: number | null
+  redeemedCount?: number | null
+  grossMarginPerOrderUsd?: number | null
 }
 
 type UploadItem = {
@@ -544,7 +576,20 @@ function KpiCard({
     background: storeColor,
   }
 
-  // Back face content (detail metrics) — no transform here; the card-back wrapper has rotateY(180deg)
+  // Back face content (detail metrics) — grouped into sections
+  const metricCell = (label: string, value: string | number, key?: string) => (
+    <div key={key || label} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
+      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>{value}</div>
+    </div>
+  )
+  const sectionTitle = (title: string) => (
+    <div key={title} style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.08em', marginTop: 16, marginBottom: 8, gridColumn: '1 / -1' }}>{title}</div>
+  )
+  const fmtUsd = (v: number | null | undefined) => v != null ? `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'
+  const fmtPct = (v: number | null | undefined) => v != null ? `${v}%` : 'N/A'
+  const fmtNum = (v: number | null | undefined) => v != null ? v.toLocaleString() : 'N/A'
+
   const backContent = cubeStore && (
     <div style={cardBaseStyle} onClick={() => canFlip && setIsFlipped(false)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setIsFlipped(false) } }} aria-label="Flip card back">
       <div style={topBarStyle} />
@@ -571,55 +616,59 @@ function KpiCard({
           ← Back
         </button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, flex: 1 }}>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>AVG TICKET</div>
-          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            ${(cubeStore.avgTicket ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>ONLINE SALES</div>
-          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            ${(cubeStore.onlineSales ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>CARRYOUT</div>
-          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            {(cubeStore.carryoutOrders ?? 0).toLocaleString()} orders ({(cubeStore.carryoutPct ?? 0)}%)
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>DELIVERY</div>
-          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            {(cubeStore.deliveryOrders ?? 0).toLocaleString()} orders ({(cubeStore.deliveryPct ?? 0)}%)
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>APP SALES</div>
-          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            ${(cubeStore.appSales ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>WEB SALES</div>
-          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            ${(cubeStore.webSales ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>AVG TICKET</div>
-          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            ${(cubeStore.avgTicket ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-        </div>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>AVG DISCOUNT</div>
-          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-            ${(cubeStore.avgDiscount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, flex: 1, overflowY: 'auto', maxHeight: 520 }}>
+        {sectionTitle('SALES & ORDERS')}
+        {metricCell('Net Sales', fmtUsd(cubeStore.netSales))}
+        {metricCell('Avg Ticket', fmtUsd(cubeStore.avgTicket))}
+        {metricCell('Online Sales', fmtUsd(cubeStore.onlineSales))}
+        {metricCell('Carryout', `${fmtNum(cubeStore.carryoutOrders)} orders (${cubeStore.carryoutPct ?? 0}%)`)}
+        {metricCell('Delivery', `${fmtNum(cubeStore.deliveryOrders)} orders (${cubeStore.deliveryPct ?? 0}%)`)}
+        {metricCell('App Sales', fmtUsd(cubeStore.appSales))}
+        {metricCell('Web Sales', fmtUsd(cubeStore.webSales))}
+
+        {sectionTitle('LABOR')}
+        {metricCell('Labor $', fmtUsd(cubeStore.totalLabor))}
+        {metricCell('Labor %', fmtPct(cubeStore.totalLaborPct))}
+        {/* OT Hours (Period) — commented out
+        {metricCell('OT Hours (Period)', fmtNum(cubeStore.totalLaborOtHours ?? cubeStore.overtimeHours))}
+        */}
+        {metricCell('Total Hours', fmtNum(cubeStore.totalHoursWorked))}
+
+        {sectionTitle('FOOD COST')}
+        {metricCell('Actual Food $', fmtUsd(cubeStore.actualFoodCostUsd ?? cubeStore.foodCostUsd))}
+        {metricCell('Actual Food %', fmtPct(cubeStore.actualFoodPct))}
+        {metricCell('Target Food %', fmtPct(cubeStore.targetFoodPct))}
+        {metricCell('Food Variance %', fmtPct(cubeStore.foodVariancePct))}
+
+        {sectionTitle('VOIDS & CASH')}
+        {metricCell('Void Orders', fmtNum(cubeStore.voidMadeOrders))}
+        {metricCell('Void Amount $', fmtUsd(cubeStore.voidMadeAmountUsd))}
+        {metricCell('Void % of Sales', fmtPct(cubeStore.voidMadePctNetSalesUsd))}
+        {metricCell('Cash Over/Short', fmtUsd(cubeStore.cashOverShortUsd))}
+
+        {sectionTitle('BOZOCORO')}
+        {metricCell('BoZoCoRo $ (All Time)', fmtUsd(cubeStore.bozocoroNetSalesUsd))}
+        {metricCell('Bad Orders $ (All Time)', fmtUsd(cubeStore.badOrderNetSalesUsd))}
+        {metricCell('Zeroed Orders (All Time)', fmtNum(cubeStore.zeroedOrders))}
+        {metricCell('Cancelled Orders $ (All Time)', fmtUsd(cubeStore.cancelledOrderNetSalesUsd))}
+        {metricCell('Refunded Orders (All Time)', fmtNum(cubeStore.refundedOrders))}
+
+        {sectionTitle('DISCOUNTS & OFFERS')}
+        {metricCell('Total Discounts', fmtUsd(cubeStore.totalDiscountsUsd))}
+        {metricCell('High Discounts', fmtUsd(cubeStore.highDiscountAmountUsd))}
+        {metricCell('High Disc %', fmtPct(cubeStore.highDiscPctNetSalesUsd))}
+        {metricCell('Avg Discount $', fmtUsd(cubeStore.averageDiscountUsd ?? cubeStore.avgDiscount))}
+        {metricCell('Offers Redeemed', fmtNum(cubeStore.redeemedCount))}
+        {metricCell('Gross Margin/Order', fmtUsd(cubeStore.grossMarginPerOrderUsd))}
+
+        {sectionTitle('DELIVERY')}
+        {/* DoorDash % (Period) — commented out
+        {metricCell('DoorDash % (Period)', fmtPct(cubeStore.doorDashDeliveryPct))}
+        {metricCell('Aggregator Fees % (Period)', fmtPct(cubeStore.aggregatorFeesCommissionsPct))}
+        */}
+
+        {sectionTitle('PROFITABILITY')}
+        {metricCell('EBITDA (All Time)', fmtUsd(cubeStore.restaurantLevelEbitda))}
       </div>
     </div>
   )
