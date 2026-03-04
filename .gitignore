@@ -46,3 +46,4 @@ debug-*.png
 *.tsbuildinfo
 next-env.d.ts
 
+scraper/node_modules
