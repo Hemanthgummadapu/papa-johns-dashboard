@@ -1,8 +1,38 @@
-import { existsSync, mkdirSync, unlinkSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import path from 'path'
 import type { BrowserContext, Page } from 'playwright'
+import { createClient } from '@supabase/supabase-js'
 
-export const EXTRANET_SESSION_PATH = path.join(process.cwd(), 'scripts', 'session.json')
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  )
+}
+
+export const EXTRANET_SESSION_PATH = '/tmp/extranet-session.json'
+
+export async function loadSessionFromSupabase(): Promise<void> {
+  try {
+    const supabase = getSupabase()
+    const { data } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'extranet_session_state')
+      .single()
+
+    if (data?.value) {
+      mkdirSync('/tmp', { recursive: true })
+      writeFileSync('/tmp/extranet-session.json', data.value)
+      console.log('[session] Loaded from Supabase → /tmp/extranet-session.json')
+    } else {
+      console.log('[session] No session in Supabase')
+    }
+  } catch (err) {
+    console.error('[session] Failed to load from Supabase:', err)
+  }
+}
 
 function ensureSessionDirExists() {
   const dir = path.dirname(EXTRANET_SESSION_PATH)
@@ -104,5 +134,17 @@ export async function ensureSession(page: Page, context: BrowserContext) {
   }
 
   await context.storageState({ path: EXTRANET_SESSION_PATH })
+
+  const state = readFileSync(EXTRANET_SESSION_PATH, 'utf8')
+  const supabase = getSupabase()
+  await supabase.from('settings').upsert(
+    {
+      key: 'extranet_session_state',
+      value: state,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'key' }
+  )
+  console.log('[session] Session saved back to Supabase')
 }
 

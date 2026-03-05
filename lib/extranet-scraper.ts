@@ -2,7 +2,7 @@ import { chromium } from 'playwright';
 import { existsSync, unlinkSync } from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
-import { ensureSession, EXTRANET_SESSION_PATH } from './extranet-session'
+import { ensureSession, EXTRANET_SESSION_PATH, loadSessionFromSupabase } from './extranet-session'
 
 dotenv.config({ path: '.env.local' });
 
@@ -51,6 +51,8 @@ function parseStoreData(storeId: string, text: string) {
 }
 
 export async function scrapeExtranet() {
+  await loadSessionFromSupabase()
+
   const browser = await chromium.launch({ 
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
