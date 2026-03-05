@@ -663,6 +663,30 @@ export default function ProfitabilityAnalyticsPage() {
             <span className="rounded-md bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white">
               Analytics
             </span>
+            <Link
+              href="/audit"
+              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              Audit
+            </Link>
+            <Link
+              href="/ai"
+              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              ✨ AI
+            </Link>
+            <Link
+              href="/dashboard"
+              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              Live
+            </Link>
+            <Link
+              href="/dashboard"
+              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              Guest Experience
+            </Link>
           </nav>
         </div>
       </header>

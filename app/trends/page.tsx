@@ -531,6 +531,18 @@ export default function TrendsPage() {
               Analytics
             </Link>
             <Link
+              href="/audit"
+              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              Audit
+            </Link>
+            <Link
+              href="/ai"
+              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            >
+              ✨ AI
+            </Link>
+            <Link
               href="/dashboard"
               className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
