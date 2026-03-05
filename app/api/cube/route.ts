@@ -107,7 +107,8 @@ function vboWhereClause(period: string, date: string): string {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const period = searchParams.get('period') || 'daily'
+  let period = searchParams.get('period') || 'daily'
+  if (period === 'week') period = 'weekly'
   const date = searchParams.get('date') || getDefaultDate()
 
   const user = process.env.PAPAJOHNS_CUBE_USER!

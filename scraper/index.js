@@ -4,6 +4,7 @@ const cron = require('node-cron');
 const pjExtranet = require('./jobs/pjExtranet');
 const smg = require('./jobs/smg');
 const cubeRefresh = require('./jobs/cubeRefresh');
+const hotschedules = require('./jobs/hotschedules');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -12,9 +13,10 @@ const JOBS = {
   pjExtranet,
   smg,
   cubeRefresh,
+  hotschedules,
 };
 
-let lastRuns = { pjExtranet: null, smg: null, cubeRefresh: null };
+let lastRuns = { pjExtranet: null, smg: null, cubeRefresh: null, hotschedules: null };
 
 function updateLastRun(jobName) {
   lastRuns[jobName] = new Date().toISOString();
@@ -39,6 +41,9 @@ cron.schedule('0 */5 * * *', () => runJob('smg'), { timezone: 'America/Chicago' 
 
 // Cron: Cube refresh every hour
 cron.schedule('0 * * * *', () => runJob('cubeRefresh'), { timezone: 'America/Chicago' });
+
+// Cron: HotSchedules sync once daily at 9:30am CT (after Tableau refreshes at 9am ET)
+cron.schedule('30 9 * * *', () => runJob('hotschedules'), { timezone: 'America/Chicago' });
 
 function requireApiKey(req, res, next) {
   const key = req.headers['x-api-key'];

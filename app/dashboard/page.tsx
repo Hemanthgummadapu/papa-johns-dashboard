@@ -21,6 +21,7 @@ import SingleStoreDateCompare from '@/components/SingleStoreDateCompare'
 import YearOverYearUploadPanel from '@/components/YearOverYearUploadPanel'
 import YearOverYearPanel from '@/components/YearOverYearPanel'
 import SMGDashboardEmbed from '@/components/SMGDashboardEmbed'
+import { Lock } from 'lucide-react'
 
 
 function roundPct(v: number): number {
@@ -1288,6 +1289,22 @@ function getDefaultMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+/** Forecast week calendar: WK N start = (year-1)-12-29 + (N * 7) days per user spec. */
+function getWeekMonday(weekNum: number, year: number): string {
+  const base = new Date(year - 1, 11, 29)
+  base.setDate(base.getDate() + weekNum * 7)
+  return base.toISOString().slice(0, 10)
+}
+
+/** Current week number for today (week of year: ceil(dayOfYear/7)). March 5, 2026 = WK10. */
+function getCurrentWeekNumber(year: number): number {
+  const now = new Date()
+  const startOfYear = new Date(year, 0, 1)
+  const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000) + 1
+  const weekNum = Math.ceil(dayOfYear / 7)
+  return Math.max(1, Math.min(53, weekNum))
+}
+
 function getPrevWeeks(current: string, n: number): string[] {
   const [year, weekStr] = current.split('-W')
   const results: string[] = []
@@ -1428,7 +1445,7 @@ export default function DashboardPage() {
 
   const [activeMetric, setActiveMetric] = useState<MetricKey | null>(null) // null = full report
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly') // weekly | monthly
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'trends' | 'upload' | 'yoy' | 'automation' | 'live' | 'guest-experience'>('dashboard') // dashboard | trends | upload | yoy | automation | live | guest-experience
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'trends' | 'upload' | 'yoy' | 'automation' | 'labor' | 'forecast' | 'live' | 'guest-experience'>('dashboard') // dashboard | trends | upload | yoy | automation | labor | forecast | live | guest-experience
   const [compareMode, setCompareMode] = useState(false) // compare mode toggle
   const [trendsPeriod, setTrendsPeriod] = useState<'3M' | '6M' | '1Y' | '2Y' | '3Y'>('6M')
   const [trendsMetricKey, setTrendsMetricKey] = useState<MetricKey>('net_sales')
@@ -1507,6 +1524,59 @@ export default function DashboardPage() {
   const [selectedStore, setSelectedStore] = useState<any>(null)
   const [showStoreModal, setShowStoreModal] = useState(false)
   const [sessionExpired, setSessionExpired] = useState(false)
+
+  // HotSchedules Labor tab
+  type HotschedulesLaborRow = {
+    id?: string
+    store_number: string
+    week: string
+    week_bd: string
+    instore_scheduled_hours: number
+    instore_actual_hours: number
+    instore_forecasted_hours: number
+    instore_optimal_hours?: number
+    manager_scheduled_hours: number
+    manager_actual_hours: number
+    manager_forecasted_hours: number
+    manager_optimal_hours?: number
+    driver_scheduled_hours: number
+    driver_actual_hours: number
+    driver_forecasted_hours: number
+    driver_optimal_hours?: number
+    total_scheduled_hours?: number
+    total_actual_hours?: number
+    synced_at?: string
+  }
+  const [laborData, setLaborData] = useState<HotschedulesLaborRow[]>([])
+  const [laborLoading, setLaborLoading] = useState(false)
+  const [laborError, setLaborError] = useState<string | null>(null)
+  const [laborSelectedWeek, setLaborSelectedWeek] = useState<string>('')
+  const [laborTrendStore, setLaborTrendStore] = useState<string | null>(null)
+  const [laborPctByStore, setLaborPctByStore] = useState<Record<string, number | null>>({})
+  const [laborCubeLoading, setLaborCubeLoading] = useState(false)
+
+  // Forecast tab: last 8 completed weeks (set in fetch effect); 2-week projection window (LY fetches)
+  const FORECAST_YEAR = 2026
+  const [forecastWeeksCurrent, setForecastWeeksCurrent] = useState<string[]>([])
+  const [forecastWindowStart, setForecastWindowStart] = useState(getCurrentWeekNumber(FORECAST_YEAR))
+  type ForecastWeekData = { week: string; stores: Array<{ storeNumber: string; netSales?: number | null; lyNetSales?: number | null; totalLaborPct?: number | null; laborPct?: number | null }> }
+  const [forecastDataByWeek, setForecastDataByWeek] = useState<Record<string, ForecastWeekData['stores']>>({})
+  const [forecastWk9ScheduledByStore, setForecastWk9ScheduledByStore] = useState<Record<string, number>>({})
+  const [forecastLoading, setForecastLoading] = useState(false)
+  const [forecastError, setForecastError] = useState<string | null>(null)
+  const AVG_WAGE = 17
+  const minForecastWindowStart = getCurrentWeekNumber(FORECAST_YEAR)
+  const forecastLyWeekKeys = (start: number) => {
+    const min = minForecastWindowStart
+    return Array.from({ length: start + 2 - min }, (_, i) => `${FORECAST_YEAR - 1}-W${String(min + i).padStart(2, '0')}`)
+  }
+
+  // Reset forecast window to current week whenever user opens Forecast tab
+  useEffect(() => {
+    if (activeTab === 'forecast') {
+      setForecastWindowStart(getCurrentWeekNumber(FORECAST_YEAR))
+    }
+  }, [activeTab])
 
   // Tableau: date picker (default today), data by store, loading, 30-min cache
   const [tableauDate, setTableauDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
@@ -1742,6 +1812,135 @@ export default function DashboardPage() {
     const t = setInterval(() => setLiveStalenessTick((prev) => prev + 1), 60000)
     return () => clearInterval(t)
   }, [activeTab, liveLastUpdated])
+
+  // HotSchedules Labor: fetch when Labor tab is active
+  useEffect(() => {
+    if (activeTab !== 'labor') return
+    let cancelled = false
+    setLaborError(null)
+    setLaborLoading(true)
+    fetch('/api/hotschedules/data', { cache: 'no-store' })
+      .then((res) => {
+        if (cancelled) return
+        if (!res.ok) throw new Error(res.statusText)
+        return res.json()
+      })
+      .then((json) => {
+        if (cancelled) return
+        setLaborData(json.data ?? [])
+      })
+      .catch((err) => {
+        if (!cancelled) setLaborError(err.message ?? 'Failed to load labor data')
+      })
+      .finally(() => {
+        if (!cancelled) setLaborLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [activeTab])
+
+  // Parse "WK9 2026" or "WK12 2026" to cube date "2026-W09"
+  const parseLaborWeekToCubeDate = (weekStr: string): string | null => {
+    const m = weekStr.match(/^WK\s*(\d+)\s+(\d{4})$/)
+    if (!m) return null
+    const week = m[1]
+    const year = m[2]
+    return `${year}-W${week.padStart(2, '0')}`
+  }
+
+  // Labor tab: fetch cube labor % for selected week (period=weekly, date=year-Wweek)
+  useEffect(() => {
+    if (activeTab !== 'labor' || laborData.length === 0) return
+    const weeksWithActuals = Array.from(new Set(laborData.filter((r) => (r.total_actual_hours ?? 0) > 0).map((r) => r.week))).sort((a, b) => {
+      const aRow = laborData.find((r) => r.week === a)
+      const bRow = laborData.find((r) => r.week === b)
+      return (bRow?.week_bd ?? '').localeCompare(aRow?.week_bd ?? '')
+    })
+    const selectedWeek = laborSelectedWeek && weeksWithActuals.includes(laborSelectedWeek) ? laborSelectedWeek : (weeksWithActuals[0] ?? '')
+    const cubeDate = selectedWeek ? parseLaborWeekToCubeDate(selectedWeek) : null
+    if (!cubeDate) return
+    let cancelled = false
+    setLaborCubeLoading(true)
+    fetch(`/api/cube?date=${encodeURIComponent(cubeDate)}&period=weekly`, { cache: 'no-store', credentials: 'include' })
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return
+        if (!json.success || !Array.isArray(json.stores)) {
+          setLaborPctByStore({})
+          return
+        }
+        const byStore: Record<string, number | null> = {}
+        for (const s of json.stores as { storeNumber: string; totalLaborPct?: number | null; laborPct?: number | null }[]) {
+          const sn = String(s.storeNumber)
+          const pct = s.totalLaborPct ?? s.laborPct ?? null
+          byStore[sn] = pct != null ? pct : null
+        }
+        setLaborPctByStore(byStore)
+      })
+      .catch(() => {
+        if (!cancelled) setLaborPctByStore({})
+      })
+      .finally(() => {
+        if (!cancelled) setLaborCubeLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [activeTab, laborData, laborSelectedWeek])
+
+  // Forecast tab: fetch 8 current + LY (for forecastWindowStart) + HotSchedules; recalc 8 weeks on every tab open
+  useEffect(() => {
+    if (activeTab !== 'forecast') return
+    const currentWk = getCurrentWeekNumber(FORECAST_YEAR)
+    // 8 weeks ending at currentWk-1 (last completed): (currentWk-8) through (currentWk-1). When WK10 completes (currentWk=11) → WK03–WK10
+    const currentWeeks = Array.from({ length: 8 }, (_, i) => `${FORECAST_YEAR}-W${String(Math.max(1, currentWk - 8 + i)).padStart(2, '0')}`)
+    setForecastWeeksCurrent(currentWeeks)
+    const lyWeeks = forecastLyWeekKeys(forecastWindowStart)
+    const weeks = [...currentWeeks, ...lyWeeks]
+    let cancelled = false
+    setForecastError(null)
+    setForecastLoading(true)
+    const cubePromise = Promise.all(
+      weeks.map((weekKey) =>
+        fetch(`/api/cube?date=${encodeURIComponent(weekKey)}&period=week`, { cache: 'no-store', credentials: 'include' }).then((r) => r.json()).then((json) => ({ weekKey, json }))
+      )
+    )
+    const hsPromise = fetch('/api/hotschedules/data', { cache: 'no-store' }).then((r) => r.json()).then((json) => json?.data ?? []).catch(() => [])
+    Promise.all([cubePromise, hsPromise])
+      .then(([results, hsData]) => {
+        if (cancelled) return
+        const byWeek: Record<string, ForecastWeekData['stores']> = {}
+        for (const { weekKey, json } of results) {
+          if (json?.success && Array.isArray(json.stores)) {
+            byWeek[weekKey] = json.stores.map((s: { storeNumber: string; netSales?: number | null; lyNetSales?: number | null; totalLaborPct?: number | null; laborPct?: number | null }) => ({
+              storeNumber: String(s.storeNumber),
+              netSales: s.netSales ?? null,
+              lyNetSales: s.lyNetSales ?? null,
+              totalLaborPct: s.totalLaborPct ?? s.laborPct ?? null,
+              laborPct: s.laborPct ?? s.totalLaborPct ?? null,
+            }))
+          } else {
+            byWeek[weekKey] = []
+          }
+        }
+        setForecastDataByWeek(byWeek)
+        const hsRows = hsData as { store_number: string; week: string; week_bd?: string; total_scheduled_hours?: number; instore_scheduled_hours?: number; manager_scheduled_hours?: number; driver_scheduled_hours?: number }[]
+        const mostRecentHsRow = hsRows.reduce<typeof hsRows[0] | null>((latest, row) => (row.week_bd != null && row.week_bd > (latest?.week_bd ?? '')) ? row : latest, null)
+        const mostRecentHsWeek = mostRecentHsRow?.week ?? null
+        const wk9ByStore: Record<string, number> = {}
+        const wk9Rows = mostRecentHsWeek ? hsRows.filter((row) => row.week === mostRecentHsWeek) : []
+        for (const row of wk9Rows) {
+          const sn = row.store_number
+          const total = row.total_scheduled_hours ?? ((row.instore_scheduled_hours ?? 0) + (row.manager_scheduled_hours ?? 0) + (row.driver_scheduled_hours ?? 0))
+          if (total > 0) wk9ByStore[sn] = total
+        }
+        setForecastWk9ScheduledByStore(wk9ByStore)
+      })
+      .catch((err) => {
+        if (!cancelled) setForecastError(err?.message ?? 'Failed to load forecast data')
+      })
+      .finally(() => {
+        if (!cancelled) setForecastLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [activeTab, forecastWindowStart])
 
   // SMG Guest Experience is temporarily disabled
   // useEffect(() => {
@@ -2178,12 +2377,14 @@ export default function DashboardPage() {
               ✨ AI
             </Link>
             {[
+              ['labor', 'Labor'],
+              ['forecast', 'Forecast'],
               ['live', 'Live'],
               ['guest-experience', 'Guest Experience'],
             ].map(([key, label]) => (
               <button
                 key={key}
-                onClick={() => setActiveTab(key as 'live' | 'guest-experience')}
+                onClick={() => setActiveTab(key as 'labor' | 'forecast' | 'live' | 'guest-experience')}
                 className={`tab-btn ${activeTab === key ? 'active' : ''}`}
                 style={{
                   padding: '8px 16px',
@@ -2332,6 +2533,558 @@ export default function DashboardPage() {
             />
           </div>
         )} */}
+
+        {/* LABOR TAB (HotSchedules) */}
+        {!loading && activeTab === 'labor' && (
+          <div className="fade-in">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>HotSchedules Labor</div>
+                <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
+                  Scheduled vs actual hours by store and category
+                </div>
+              </div>
+            </div>
+
+            {laborError && (
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 24 }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 8, color: 'var(--danger-text)' }}>Error</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif" }}>{laborError}</div>
+              </div>
+            )}
+
+            {laborLoading && laborData.length === 0 && (
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 40, textAlign: 'center' }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>Loading labor data...</div>
+                <div style={{ height: 2, borderRadius: 1, background: 'var(--bg-elevated)', width: '100%', maxWidth: 400, margin: '0 auto' }} />
+              </div>
+            )}
+
+            {!laborLoading && laborData.length > 0 && (() => {
+              const byStore = laborData.reduce<Record<string, HotschedulesLaborRow[]>>((acc, row) => {
+                const sn = row.store_number
+                if (!acc[sn]) acc[sn] = []
+                acc[sn].push(row)
+                return acc
+              }, {})
+              const weeksWithActuals = Array.from(new Set(laborData.filter((r) => (r.total_actual_hours ?? 0) > 0).map((r) => r.week))).sort((a, b) => {
+                const aRow = laborData.find((r) => r.week === a)
+                const bRow = laborData.find((r) => r.week === b)
+                return (bRow?.week_bd ?? '').localeCompare(aRow?.week_bd ?? '')
+              })
+              const selectedWeek = laborSelectedWeek && weeksWithActuals.includes(laborSelectedWeek) ? laborSelectedWeek : (weeksWithActuals[0] ?? '')
+              const weekRows = laborData.filter((r) => r.week === selectedWeek)
+              const totalSchedWeek = weekRows.reduce((sum, r) => sum + (r.total_scheduled_hours ?? (r.instore_scheduled_hours + r.manager_scheduled_hours + r.driver_scheduled_hours)), 0)
+              const totalActualWeek = weekRows.reduce((sum, r) => sum + (r.total_actual_hours ?? (r.instore_actual_hours + r.manager_actual_hours + r.driver_actual_hours)), 0)
+              const varianceWeek = totalActualWeek - totalSchedWeek
+              const fmtHr = (n: number) => (n != null && !Number.isNaN(n) ? n.toFixed(1) : '—')
+              const variance = (s: number, a: number) => (s != null && a != null && !Number.isNaN(s) && !Number.isNaN(a) ? s - a : null)
+              const storeOrder = ['2021', '2081', '2259', '2292', '2481', '3011'].filter((sn) => weekRows.some((r) => r.store_number === sn))
+              return (
+                <>
+                  {/* Summary bar (above week dropdown) — styled like Live tab LIVE/STALE banner */}
+                  <div
+                    style={{
+                      padding: '12px 16px',
+                      marginBottom: 16,
+                      borderRadius: 8,
+                      background: 'var(--bg-surface)',
+                      border: '1px solid var(--border-subtle)',
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      gap: 24,
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span style={{ color: 'var(--text-tertiary)' }}>Total scheduled</span>
+                    <span style={{ color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>{fmtHr(totalSchedWeek)}h</span>
+                    <span style={{ color: 'var(--text-tertiary)' }}>Total actual</span>
+                    <span style={{ color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>{fmtHr(totalActualWeek)}h</span>
+                    <span style={{ color: 'var(--text-tertiary)' }}>Variance (actual − scheduled)</span>
+                    <span
+                      style={{
+                        color: varianceWeek > 0 ? 'var(--danger-text)' : varianceWeek < 0 ? 'var(--success-text)' : 'var(--text-secondary)',
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >
+                      {varianceWeek >= 0 ? '+' : ''}{fmtHr(varianceWeek)}h
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 400, color: 'var(--text-tertiary)' }}>
+                      Data synced daily from HotSchedules via Tableau
+                    </span>
+                  </div>
+
+                  {/* Week selector */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif'" }}>Week:</span>
+                    <select
+                      value={selectedWeek}
+                      onChange={(e) => setLaborSelectedWeek(e.target.value)}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-subtle)',
+                        background: 'var(--bg-surface)',
+                        color: 'var(--text-primary)',
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 13,
+                        fontWeight: 500,
+                        minWidth: 140,
+                      }}
+                    >
+                      {weeksWithActuals.map((w) => (
+                        <option key={w} value={w}>{w}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))',
+                      gap: 16,
+                    }}
+                  >
+                    {storeOrder.map((storeNum) => {
+                      const current = weekRows.find((r) => r.store_number === storeNum)
+                      if (!current) return null
+                      const storeIdx = parseInt(storeNum, 10) % STORE_COLORS.length
+                      const storeColor = STORE_COLORS[storeIdx]
+                      const vInstore = variance(current.instore_scheduled_hours, current.instore_actual_hours)
+                      const vManager = variance(current.manager_scheduled_hours, current.manager_actual_hours)
+                      const vDriver = variance(current.driver_scheduled_hours, current.driver_actual_hours)
+                      const totalSched = (current.total_scheduled_hours ?? (current.instore_scheduled_hours + current.manager_scheduled_hours + current.driver_scheduled_hours))
+                      const totalActual = (current.total_actual_hours ?? (current.instore_actual_hours + current.manager_actual_hours + current.driver_actual_hours))
+                      const vTotal = totalSched != null && totalActual != null ? totalSched - totalActual : null
+                      const borderColor = totalActual > totalSched ? 'var(--danger-text)' : totalActual < totalSched ? 'var(--success-text)' : 'var(--border-subtle)'
+                      const rowsForStore = byStore[storeNum] ?? []
+                      const sortedStore = [...rowsForStore].sort((a, b) => (b.week_bd || '').localeCompare(a.week_bd || ''))
+                      const trendData = sortedStore
+                        .slice(0, 8)
+                        .reverse()
+                        .map((r) => ({
+                          week: r.week,
+                          scheduled: r.total_scheduled_hours ?? (r.instore_scheduled_hours + r.manager_scheduled_hours + r.driver_scheduled_hours),
+                          actual: r.total_actual_hours ?? (r.instore_actual_hours + r.manager_actual_hours + r.driver_actual_hours),
+                        }))
+                        .filter((d) => d.scheduled !== 0 || d.actual !== 0)
+                      const showTrend = laborTrendStore === storeNum
+                      return (
+                        <div
+                          key={storeNum}
+                          style={{
+                            background: 'var(--bg-surface)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 12,
+                            padding: 20,
+                            position: 'relative',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: borderColor }} />
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                            <div>
+                              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>Store {storeNum}</div>
+                              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>{current.week}</div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <button
+                                type="button"
+                                onClick={() => setLaborTrendStore(showTrend ? null : storeNum)}
+                                style={{
+                                  padding: '6px 12px',
+                                  borderRadius: 6,
+                                  border: '1px solid var(--border-subtle)',
+                                  background: showTrend ? 'var(--bg-overlay)' : 'transparent',
+                                  color: 'var(--text-secondary)',
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  fontFamily: "'Inter', sans-serif",
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {showTrend ? 'Hide Trend' : 'Show Trend'}
+                              </button>
+                              <div style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: storeColor, fontWeight: 500 }}>
+                                {storeNum.slice(-2)}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'grid', gap: 10, fontSize: 12, fontFamily: "'Inter', sans-serif'" }}>
+                            {[
+                              { label: 'Instore', sched: current.instore_scheduled_hours, actual: current.instore_actual_hours, v: vInstore },
+                              { label: 'Manager', sched: current.manager_scheduled_hours, actual: current.manager_actual_hours, v: vManager },
+                              { label: 'Driver', sched: current.driver_scheduled_hours, actual: current.driver_actual_hours, v: vDriver },
+                            ].map(({ label, sched, actual, v }) => (
+                              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--bg-base)', borderRadius: 8 }}>
+                                <span style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>{label}</span>
+                                <span style={{ color: 'var(--text-primary)' }}>Sched: {fmtHr(sched)}h</span>
+                                <span style={{ color: 'var(--text-primary)' }}>Actual: {fmtHr(actual)}h</span>
+                                <span style={{ color: v != null ? (v < 0 ? 'var(--danger-text)' : v > 0 ? 'var(--success-text)' : 'var(--text-primary)') : 'var(--text-primary)', fontWeight: 600 }}>
+                                  {v != null ? (v >= 0 ? `+${fmtHr(v)}` : fmtHr(v)) : '—'}h
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.08em' }}>TOTAL</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>{fmtHr(totalSched)}h sched</span>
+                              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>{fmtHr(totalActual)}h actual</span>
+                              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: vTotal != null ? (vTotal < 0 ? 'var(--danger-text)' : vTotal > 0 ? 'var(--success-text)' : 'var(--text-primary)') : 'var(--text-primary)' }}>
+                                {vTotal != null ? (vTotal >= 0 ? `+${fmtHr(vTotal)}` : fmtHr(vTotal)) : '—'}h
+                              </span>
+                            </div>
+                          </div>
+                          {/* Labor % from cube (weekly) for selected week */}
+                          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.08em' }}>LABOR %</span>
+                            {laborCubeLoading ? (
+                              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>—</span>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: 600,
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                  color: (() => {
+                                    const pct = laborPctByStore[storeNum]
+                                    if (pct == null) return 'var(--text-primary)'
+                                    return pct > 28 ? 'var(--danger-text)' : 'var(--success-text)'
+                                  })(),
+                                }}
+                              >
+                                {laborPctByStore[storeNum] != null ? `${laborPctByStore[storeNum]}%` : '—'}
+                              </span>
+                            )}
+                          </div>
+                          {showTrend && trendData.length > 0 && (
+                            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border-subtle)', height: 120 }}>
+                              <ResponsiveContainer width="100%" height={120}>
+                                <LineChart data={trendData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                                  <XAxis dataKey="week" tick={{ fontSize: 9, fill: 'var(--text-tertiary)' }} />
+                                  <YAxis tick={{ fontSize: 9, fill: 'var(--text-tertiary)' }} width={28} />
+                                  <Tooltip contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 8, fontSize: 11 }} />
+                                  <Line type="monotone" dataKey="scheduled" stroke="#3b82f6" strokeWidth={2} dot={false} name="Scheduled" />
+                                  <Line type="monotone" dataKey="actual" stroke="#f97316" strokeWidth={2} dot={false} name="Actual" />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )
+            })()}
+
+            {!laborLoading && laborData.length === 0 && !laborError && (
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 40, textAlign: 'center' }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>No labor data yet</div>
+                <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
+                  Data is synced from Tableau once daily. Run the scraper job or wait for the next sync.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* FORECAST TAB */}
+        {!loading && activeTab === 'forecast' && (
+          <div className="fade-in">
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>Sales & Labor Forecast</div>
+              <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
+                {`Next 2 weeks at a time, projected from LY same-week sales × current 4-week comp trend (WK${Math.max(1, getCurrentWeekNumber(FORECAST_YEAR) - 4)}–WK${Math.max(1, getCurrentWeekNumber(FORECAST_YEAR) - 1)})`}
+              </div>
+            </div>
+
+            {forecastLoading && (
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 40, textAlign: 'center' }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', marginBottom: 12 }}>Loading forecast data…</div>
+                <div style={{ width: 24, height: 24, border: '2px solid var(--brand)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
+              </div>
+            )}
+
+            {forecastError && !forecastLoading && (
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 24 }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 8, color: 'var(--danger-text)' }}>Error</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif" }}>{forecastError}</div>
+              </div>
+            )}
+
+            {!forecastLoading && !forecastError && Object.keys(forecastDataByWeek).length > 0 && forecastWeeksCurrent.length > 0 && (() => {
+              const STORE_ORDER = ['2021', '2081', '2259', '2292', '2481', '3011']
+              const currentWk = getCurrentWeekNumber(FORECAST_YEAR)
+              const last4Weeks = Array.from({ length: 4 }, (_, i) => `${FORECAST_YEAR}-W${String(Math.max(1, currentWk - 4 + i)).padStart(2, '0')}`)
+              const lyWeekKeys = forecastLyWeekKeys(forecastWindowStart)
+
+              const getStoreInWeek = (weekKey: string, storeNum: string) => {
+                const arr = forecastDataByWeek[weekKey]
+                if (!arr) return null
+                return arr.find((s) => String(s.storeNumber) === storeNum) ?? null
+              }
+
+              const compPctDefault = -15
+
+              const linearTrendFallback = (storeNum: string, numWeeks: number): number[] => {
+                const sales: number[] = []
+                for (const w of forecastWeeksCurrent) {
+                  const s = getStoreInWeek(w, storeNum)
+                  const n = s?.netSales
+                  if (n != null && !Number.isNaN(n)) sales.push(n)
+                }
+                if (sales.length < 2 || numWeeks <= 0) return Array(numWeeks).fill(0)
+                const n = sales.length
+                let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0
+                for (let i = 0; i < n; i++) {
+                  sumX += i
+                  sumY += sales[i]
+                  sumXY += i * sales[i]
+                  sumX2 += i * i
+                }
+                const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX) || 0
+                const intercept = (sumY - slope * sumX) / n
+                return Array.from({ length: numWeeks }, (_, i) => Math.max(0, intercept + slope * (n + i)))
+              }
+
+              const storeResults: Array<{
+                storeNum: string
+                compPct: number
+                adjustedComp: number
+                lySales: (number | null)[]
+                lyFallback: boolean
+                projSales: number[]
+                avgLaborPct: number
+                projLabor: number[]
+                sparklineActual: number[]
+                sparklineProj: number[]
+              }> = []
+
+              for (const storeNum of STORE_ORDER) {
+                const compPcts: number[] = []
+                for (const w of last4Weeks) {
+                  const s = getStoreInWeek(w, storeNum)
+                  const net = s?.netSales ?? 0
+                  const ly = s?.lyNetSales
+                  if (ly != null && ly > 0) compPcts.push(((net - ly) / ly) * 100)
+                }
+                const compPct = compPcts.length > 0 ? compPcts.reduce((a, b) => a + b, 0) / compPcts.length : compPctDefault
+                const compMultiplier = storeNum === '2481' ? 0.50 : 0.7
+                const adjustedComp = compPct * compMultiplier
+
+                const lySales: (number | null)[] = lyWeekKeys.map((key) => {
+                  const s = getStoreInWeek(key, storeNum)
+                  return s?.netSales != null ? s.netSales : null
+                })
+                const fallback = linearTrendFallback(storeNum, lyWeekKeys.length)
+                let lyFallback = false
+                const resolvedLy = lySales.map((val, i) => {
+                  if (val != null) return val
+                  lyFallback = true
+                  return fallback[i] ?? 0
+                })
+
+                const projSales = resolvedLy.map((ly) => (ly ?? 0) * (1 + adjustedComp / 100))
+
+                const laborPcts: number[] = []
+                for (const w of last4Weeks) {
+                  const s = getStoreInWeek(w, storeNum)
+                  const p = s?.totalLaborPct ?? s?.laborPct
+                  if (p != null && !Number.isNaN(p)) laborPcts.push(p)
+                }
+                const avgLaborPct = laborPcts.length > 0 ? laborPcts.reduce((a, b) => a + b, 0) / laborPcts.length : 0
+
+                const projLabor = projSales.map((sales) => sales * (avgLaborPct / 100))
+
+                storeResults.push({
+                  storeNum,
+                  compPct,
+                  adjustedComp,
+                  lySales,
+                  lyFallback,
+                  projSales,
+                  avgLaborPct,
+                  projLabor,
+                  sparklineActual: forecastWeeksCurrent.map((w) => getStoreInWeek(w, storeNum)?.netSales ?? 0),
+                  sparklineProj: projSales,
+                })
+              }
+
+              const totalProjByWeek = (() => {
+                const len = lyWeekKeys.length
+                const i0 = len - 2
+                const i1 = len - 1
+                return [
+                  storeResults.reduce((s, r) => s + (r.projSales[i0] ?? 0), 0),
+                  storeResults.reduce((s, r) => s + (r.projSales[i1] ?? 0), 0),
+                ]
+              })()
+              const avgComp = storeResults.length > 0 ? storeResults.reduce((s, r) => s + r.compPct, 0) / storeResults.length : 0
+
+              const fmtUsd = (n: number) => `$${Math.round(n).toLocaleString()}`
+              const fmtPct = (n: number) => `${n >= 0 ? '' : ''}${n.toFixed(1)}%`
+
+              return (
+                <>
+                  <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px', marginBottom: 12, fontFamily: "'Inter', sans-serif", fontSize: 13 }}>
+                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                      Forecasting WK{forecastWindowStart}–WK{forecastWindowStart + 1} {FORECAST_YEAR} • Total projected: {fmtUsd(totalProjByWeek[0])} (WK{forecastWindowStart}) | {fmtUsd(totalProjByWeek[1])} (WK{forecastWindowStart + 1})
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                      Comp trend adjusted to 70% to account for mean reversion
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                    {storeResults.map((r) => {
+                      const storeIdx = parseInt(r.storeNum, 10) % STORE_COLORS.length
+                      const storeColor = STORE_COLORS[storeIdx]
+                      const currentIdx0 = lyWeekKeys.length - 2
+                      const currentIdx1 = lyWeekKeys.length - 1
+                      const chartData = [
+                        ...forecastWeeksCurrent.map((w, i) => ({
+                          week: `WK${w.split('-W')[1] ?? String(i + 1).padStart(2, '0')}`,
+                          actual: r.sparklineActual[i],
+                          projDim: null as number | null,
+                          projBright: null as number | null,
+                        })),
+                        ...r.projSales.map((val, i) => {
+                          const weekNum = minForecastWindowStart + i
+                          const currentWkNum = getCurrentWeekNumber(FORECAST_YEAR)
+                          const isProjected = weekNum >= currentWkNum
+                          const isCurrentView = weekNum >= forecastWindowStart && weekNum <= forecastWindowStart + 1
+                          return {
+                            week: `WK${weekNum}`,
+                            actual: isProjected ? null : (val as number | null),
+                            projDim: isProjected && !isCurrentView ? val : null,
+                            projBright: isProjected && isCurrentView ? val : null,
+                          }
+                        }),
+                      ]
+                      return (
+                        <div
+                          key={r.storeNum}
+                          style={{
+                            background: 'var(--bg-surface)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 12,
+                            padding: 10,
+                            position: 'relative',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: storeColor }} />
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>Store {r.storeNum}</span>
+                              <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: storeColor, fontWeight: 500 }}>
+                                {r.storeNum.slice(-2)}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <button
+                                type="button"
+                                disabled={forecastWindowStart <= minForecastWindowStart}
+                                onClick={() => setForecastWindowStart((w) => Math.max(minForecastWindowStart, w - 2))}
+                                style={{
+                                  padding: '4px 6px',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  background: forecastWindowStart <= minForecastWindowStart ? 'var(--bg-overlay)' : 'var(--bg-base)',
+                                  color: forecastWindowStart <= minForecastWindowStart ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                                  fontSize: 14,
+                                  cursor: forecastWindowStart <= minForecastWindowStart ? 'not-allowed' : 'pointer',
+                                  lineHeight: 1,
+                                }}
+                                aria-label="Previous 2 weeks"
+                              >
+                                ←
+                              </button>
+                              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: 'var(--text-secondary)', minWidth: 100, textAlign: 'center' }}>
+                                WK{forecastWindowStart}–WK{forecastWindowStart + 1} {FORECAST_YEAR}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setForecastWindowStart((w) => w + 2)}
+                                style={{
+                                  padding: '4px 6px',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  background: 'var(--bg-base)',
+                                  color: 'var(--text-primary)',
+                                  fontSize: 14,
+                                  cursor: 'pointer',
+                                  lineHeight: 1,
+                                }}
+                                aria-label="Next 2 weeks"
+                              >
+                                →
+                              </button>
+                            </div>
+                          </div>
+                          {r.lyFallback && (
+                            <div style={{ fontSize: 9, color: 'var(--warning-text)', marginBottom: 4, fontFamily: "'Inter', sans-serif'" }}>LY data unavailable — using trend</div>
+                          )}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, minWidth: 0 }}>
+                            {[currentIdx0, currentIdx1].map((idx) => (
+                              <div key={idx} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: 8 }}>
+                                <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 4, fontFamily: "'Inter', sans-serif", letterSpacing: '0.04em' }}>{`WK${minForecastWindowStart + idx} ${FORECAST_YEAR}`}</div>
+                                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", marginBottom: 6 }}>
+                                  LY {r.lySales[idx] != null ? fmtUsd(r.lySales[idx]) : '—'}  •  Comp {fmtPct(r.compPct)}  →  Applied {fmtPct(r.adjustedComp)}
+                                </div>
+                                <div style={{ marginBottom: 6 }}>
+                                  <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-tertiary)', letterSpacing: '0.06em', fontFamily: "'Inter', sans-serif'" }}>PROJ SALES</div>
+                                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700, color: '#fff' }}>{fmtUsd(r.projSales[idx])}</span>
+                                    <span style={{ color: 'var(--danger-text)', fontSize: 14 }}>↓</span>
+                                  </div>
+                                </div>
+                                <div style={{ height: 1, background: 'var(--border-subtle)', margin: '6px 0' }} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 9, fontFamily: "'Inter', sans-serif'", color: 'var(--text-tertiary)' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ letterSpacing: '0.04em', fontWeight: 600 }}>VARIANCE</span>
+                                    <Lock size={12} style={{ color: 'var(--text-tertiary)', opacity: 0.5 }} />
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ letterSpacing: '0.04em', fontWeight: 600 }}>PROJ LABOR $</span>
+                                    <Lock size={12} style={{ color: 'var(--text-tertiary)', opacity: 0.5 }} />
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ letterSpacing: '0.04em', fontWeight: 600 }}>HOURS NEEDED</span>
+                                    <Lock size={12} style={{ color: 'var(--text-tertiary)', opacity: 0.5 }} />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ marginTop: 8, height: 80 }}>
+                            <ResponsiveContainer width="100%" height={80}>
+                              <LineChart data={chartData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                                <XAxis dataKey="week" tick={{ fontSize: 8, fill: 'var(--text-tertiary)' }} />
+                                <YAxis tick={{ fontSize: 8, fill: 'var(--text-tertiary)' }} width={28} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                                <Tooltip contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 8, fontSize: 10 }} formatter={(val: number | undefined) => [val != null ? fmtUsd(val) : '—', '']} />
+                                <Line type="monotone" dataKey="actual" stroke="#3b82f6" strokeWidth={2} dot={false} name="Actual" connectNulls />
+                                <Line type="monotone" dataKey="projDim" stroke="#f97316" strokeWidth={1.5} strokeDasharray="4 4" strokeOpacity={0.5} dot={false} name="Projected (prior)" connectNulls />
+                                <Line type="monotone" dataKey="projBright" stroke="#f97316" strokeWidth={2.5} strokeDasharray="4 4" dot={false} name="Projected" connectNulls />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )
+            })()}
+          </div>
+        )}
 
         {/* LIVE TAB */}
         {!loading && activeTab === 'live' && (
