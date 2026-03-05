@@ -1,7 +1,7 @@
 {
   "build": {
     "builder": "nixpacks",
-    "buildCommand": "npm run build"
+    "buildCommand": "npm run build && npx playwright install chromium --with-deps"
   },
   "deploy": {
     "startCommand": "npm run start",
