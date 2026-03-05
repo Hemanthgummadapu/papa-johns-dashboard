@@ -1,22 +1,17 @@
-const { logScrapeStart, logScrapeEnd } = require('../db');
-
 async function run() {
-  const logId = await logScrapeStart('cubeRefresh');
   try {
-    const baseUrl = process.env.NEXTJS_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const baseUrl = process.env.NEXTJS_URL || 'http://localhost:3000';
     const apiKey = process.env.SCRAPER_API_KEY;
     const res = await fetch(`${baseUrl}/api/cube?period=daily`, {
       method: 'GET',
       headers: apiKey ? { 'x-api-key': apiKey } : {},
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || data.message || `HTTP ${res.status}`);
-    }
-    await logScrapeEnd(logId, 'success');
+    console.log(`[${new Date().toISOString()}] cubeRefresh result:`, JSON.stringify(data));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return { success: true, data };
   } catch (err) {
-    await logScrapeEnd(logId, 'failed', err.message);
+    console.error(`[${new Date().toISOString()}] cubeRefresh FAILED:`, err.message);
     throw err;
   }
 }

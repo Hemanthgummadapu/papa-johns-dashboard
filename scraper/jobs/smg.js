@@ -1,22 +1,17 @@
-const { logScrapeStart, logScrapeEnd } = require('../db');
-
 async function run() {
-  const logId = await logScrapeStart('smg');
   try {
-    const baseUrl = process.env.NEXTJS_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const baseUrl = process.env.NEXTJS_URL || 'http://localhost:3000';
     const apiKey = process.env.SCRAPER_API_KEY;
     const res = await fetch(`${baseUrl}/api/cron-smg`, {
       method: 'GET',
       headers: apiKey ? { 'x-api-key': apiKey } : {},
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok && res.status !== 503) {
-      throw new Error(data.error || data.message || `HTTP ${res.status}`);
-    }
-    await logScrapeEnd(logId, res.status === 503 ? 'skipped' : 'success');
-    return { success: res.status !== 503, data };
+    console.log(`[${new Date().toISOString()}] smg result:`, JSON.stringify(data));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return { success: true, data };
   } catch (err) {
-    await logScrapeEnd(logId, 'failed', err.message);
+    console.error(`[${new Date().toISOString()}] smg FAILED:`, err.message);
     throw err;
   }
 }

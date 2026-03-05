@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const cron = require('node-cron');
-const { getPool, initTables } = require('./db');
 const pjExtranet = require('./jobs/pjExtranet');
 const smg = require('./jobs/smg');
 const cubeRefresh = require('./jobs/cubeRefresh');
@@ -50,26 +49,8 @@ function requireApiKey(req, res, next) {
   next();
 }
 
-app.get('/health', async (req, res) => {
-  let dbOk = false;
-  let lastRunRows = [];
-  try {
-    const pool = getPool();
-    const r = await pool.query(
-      'SELECT job_name, status, started_at, completed_at FROM scrape_logs ORDER BY started_at DESC LIMIT 10'
-    );
-    lastRunRows = r.rows;
-    dbOk = true;
-  } catch (_e) {
-    // DB unavailable, status remains degraded
-  }
-  res.json({
-    status: dbOk ? 'ok' : 'degraded',
-    timestamp: new Date(),
-    database: dbOk ? 'connected' : 'disconnected',
-    lastRuns,
-    recentLogs: lastRunRows,
-  });
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date(), lastRuns });
 });
 
 app.post('/run/:job', requireApiKey, async (req, res) => {
@@ -90,13 +71,6 @@ app.use(express.json());
 
 async function start() {
   console.log('Scraper starting. NEXTJS_URL:', process.env.NEXTJS_URL);
-  if (process.env.DATABASE_URL) {
-    try {
-      await initTables();
-    } catch (_e) {
-      // Tables may already exist or DB not yet available
-    }
-  }
   app.listen(PORT);
 }
 
