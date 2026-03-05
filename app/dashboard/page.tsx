@@ -134,6 +134,29 @@ type UploadItem = {
   }
 }
 
+/** Tableau Leadership API response (store + date summary) */
+type TableauLeadership = {
+  store_number: string
+  date: string
+  labor_pct: number
+  food_pct: number
+  bozocoro_pct: number
+  osat_pct: number
+  avg_otd_time: string
+  [key: string]: unknown
+}
+
+/** Tableau BoZoCoRo API response (detail by category) */
+type TableauBozocoroDetail = { employee: string; order_id: string; amount: number; time: string; reason?: string }
+type TableauBozocoro = {
+  store_number: string
+  date: string
+  zeroed_out: { summary: { count: number; total_value: number }; details: TableauBozocoroDetail[] }
+  bad_orders: { summary: { count: number; total_value: number }; details: TableauBozocoroDetail[] }
+  cancelled: { summary: { count: number; total_value: number }; details: TableauBozocoroDetail[] }
+  refunds: { summary: { count: number; total_value: number }; details: TableauBozocoroDetail[] }
+}
+
 // ── Targets ──────────────────────────────────────────────────────────────────
 const TARGETS: Partial<Record<MetricKey, number>> = {
   labor_pct: 28.68,
@@ -538,14 +561,22 @@ function KpiCard({
   cubeStore,
   cubeDateLabel,
   showLyBanner,
+  tableauLeadership,
+  tableauBozocoro,
+  tableauLoading,
 }: {
   store: StoreUI
   reports: ReportPoint[]
   cubeStore?: CubeStoreRow | null
   cubeDateLabel?: string
   showLyBanner?: string
+  tableauLeadership?: TableauLeadership | null
+  tableauBozocoro?: TableauBozocoro | null
+  tableauLoading?: boolean
 }) {
   const [isFlipped, setIsFlipped] = useState(false)
+  const [bozocoroExpanded, setBozocoroExpanded] = useState(false)
+  const [bozocoroTab, setBozocoroTab] = useState<'zeroed' | 'bad' | 'cancelled' | 'refunds'>('zeroed')
   const latest = reports?.[reports.length - 1]
   const idx = Number.isFinite(Number(store.number))
     ? Number(store.number) % STORE_COLORS.length
@@ -772,6 +803,131 @@ function KpiCard({
             </div>
           )
         })}
+      </div>
+
+      {/* Tableau section: Labor %, Food %, BOZOCORO %, OSAT %, Avg OTD Time */}
+      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
+        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 8 }}>TABLEAU</div>
+        {tableauLoading ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} style={{ height: 36, background: 'var(--bg-overlay)', borderRadius: 6, opacity: 0.7 }} />
+            ))}
+          </div>
+        ) : tableauLeadership ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+            {[
+              { label: 'Labor %', val: tableauLeadership.labor_pct, redAbove: 28, yellowAbove: 25 },
+              { label: 'Food %', val: tableauLeadership.food_pct, redAbove: 35, yellowAbove: 30 },
+              { label: 'BOZOCORO %', val: tableauLeadership.bozocoro_pct, redAbove: null, yellowAbove: null },
+              { label: 'OSAT %', val: tableauLeadership.osat_pct, redAbove: null, yellowAbove: null },
+              { label: 'Avg OTD', val: tableauLeadership.avg_otd_time, redAbove: null, yellowAbove: null },
+            ].map(({ label, val, redAbove, yellowAbove }) => {
+              const num = typeof val === 'number' ? val : parseFloat(String(val ?? ''))
+              const isNum = !Number.isNaN(num)
+              let color = 'var(--text-primary)'
+              if (redAbove != null && isNum) color = num > redAbove ? 'var(--danger-text)' : num > (yellowAbove ?? 0) ? 'var(--warning-text)' : 'var(--success-text)'
+              return (
+                <div key={label} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color }}>{isNum ? (label === 'Avg OTD' ? `${num}` : `${num}%`) : '—'}</div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No Tableau data</div>
+        )}
+      </div>
+
+      {/* BoZoCoRo Detail expandable */}
+      <div style={{ marginTop: 12 }}>
+        <button
+          type="button"
+          onClick={() => setBozocoroExpanded((e) => !e)}
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            background: 'var(--bg-overlay)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 8,
+            color: 'var(--text-secondary)',
+            fontSize: 12,
+            fontFamily: "'Inter', sans-serif",
+            fontWeight: 500,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span>BoZoCoRo Detail</span>
+          <span style={{ opacity: 0.8 }}>{bozocoroExpanded ? '▼' : '▶'}</span>
+        </button>
+        {bozocoroExpanded && (
+          <div style={{ marginTop: 8, background: 'var(--bg-base)', borderRadius: 8, border: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-subtle)' }}>
+              {(['zeroed', 'bad', 'cancelled', 'refunds'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setBozocoroTab(tab)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 6px',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    fontFamily: "'Inter', sans-serif",
+                    background: bozocoroTab === tab ? 'var(--bg-overlay)' : 'transparent',
+                    color: bozocoroTab === tab ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  {tab === 'zeroed' ? 'Zeroed' : tab === 'bad' ? 'Bad' : tab === 'cancelled' ? 'Cancelled' : 'Refunds'}
+                </button>
+              ))}
+            </div>
+            <div style={{ padding: 10, maxHeight: 220, overflow: 'auto' }}>
+              {tableauBozocoro ? (() => {
+                const key = bozocoroTab === 'zeroed' ? 'zeroed_out' : bozocoroTab === 'bad' ? 'bad_orders' : bozocoroTab === 'cancelled' ? 'cancelled' : 'refunds'
+                const block = (tableauBozocoro as any)[key] as { summary: { count: number; total_value: number }; details: TableauBozocoroDetail[] } | undefined
+                if (!block?.details?.length) return <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No rows</div>
+                const byEmployee = block.details.reduce((acc, row) => {
+                  const name = (row.employee ?? 'Unknown').trim() || 'Unknown'
+                  if (!acc[name]) acc[name] = { count: 0, amount: 0 }
+                  acc[name].count += 1
+                  acc[name].amount += Number(row.amount) || 0
+                  return acc
+                }, {} as Record<string, { count: number; amount: number }>)
+                const rows = Object.entries(byEmployee).sort((a, b) => b[1].amount - a[1].amount)
+                return (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, fontFamily: "'Inter', sans-serif" }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 600 }}>Employee</th>
+                        <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 600 }}>Orders</th>
+                        <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 600 }}>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(([name, { count, amount }]) => (
+                        <tr key={name} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                          <td style={{ padding: '6px 8px', color: 'var(--text-primary)' }}>{name}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)' }}>{count}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>${amount.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              })() : (
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No BoZoCoRo data</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1351,7 +1507,14 @@ export default function DashboardPage() {
   const [selectedStore, setSelectedStore] = useState<any>(null)
   const [showStoreModal, setShowStoreModal] = useState(false)
   const [sessionExpired, setSessionExpired] = useState(false)
-  
+
+  // Tableau: date picker (default today), data by store, loading, 30-min cache
+  const [tableauDate, setTableauDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [tableauDataByStore, setTableauDataByStore] = useState<Record<string, { leadership: TableauLeadership | null; bozocoro: TableauBozocoro | null }>>({})
+  const [tableauLoading, setTableauLoading] = useState(false)
+  const tableauCacheRef = useRef<Record<string, { leadership: TableauLeadership | null; bozocoro: TableauBozocoro | null; ts: number }>>({})
+  const TABLEAU_CACHE_MS = 30 * 60 * 1000
+
   // Guest Experience (SMG) - Disabled
   // State kept minimal to prevent errors, but feature is disabled
   const [smgData] = useState<Array<any>>([])
@@ -1445,19 +1608,45 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Calculate countdown based on lastScraped timestamp
-  const calculateCountdown = (lastScraped: string | null): number => {
-    if (!lastScraped) return 0
-    
-    const lastScrapedTime = new Date(lastScraped).getTime()
-    const nextScrapeTime = lastScrapedTime + (15 * 60 * 1000) // 15 minutes in milliseconds
-    const now = Date.now()
-    const timeRemaining = Math.max(0, Math.floor((nextScrapeTime - now) / 1000))
-    
-    return timeRemaining
-  }
+  // Fetch Tableau Leadership + BoZoCoRo for selected stores and tableauDate; 30-min cache
+  useEffect(() => {
+    const safe = selectedStores.filter((n) => stores.some((s) => s.number === n))
+    const storesToFetch = safe.length > 0 ? safe : stores.slice(0, 3).map((s) => s.number)
+    if (storesToFetch.length === 0 || !tableauDate) return
 
-  // Fetch live data from Supabase (fast, instant)
+    const cache = tableauCacheRef.current
+    const now = Date.now()
+
+    const run = async () => {
+      setTableauLoading(true)
+      const next: Record<string, { leadership: TableauLeadership | null; bozocoro: TableauBozocoro | null }> = {}
+      for (const storeNum of storesToFetch) {
+        const key = `${storeNum}-${tableauDate}`
+        const cached = cache[key]
+        if (cached && now - cached.ts < TABLEAU_CACHE_MS) {
+          next[storeNum] = { leadership: cached.leadership, bozocoro: cached.bozocoro }
+          continue
+        }
+        try {
+          const [leadRes, bozRes] = await Promise.all([
+            fetch(`/api/tableau-leadership?store=${encodeURIComponent(storeNum)}&date=${encodeURIComponent(tableauDate)}`, { cache: 'no-store' }),
+            fetch(`/api/tableau-bozocoro?store=${encodeURIComponent(storeNum)}&date=${encodeURIComponent(tableauDate)}`, { cache: 'no-store' }),
+          ])
+          const leadership: TableauLeadership | null = leadRes.ok ? await leadRes.json() : null
+          const bozocoro: TableauBozocoro | null = bozRes.ok ? await bozRes.json() : null
+          next[storeNum] = { leadership, bozocoro }
+          cache[key] = { leadership, bozocoro, ts: Date.now() }
+        } catch {
+          next[storeNum] = { leadership: null, bozocoro: null }
+        }
+      }
+      setTableauDataByStore((prev) => ({ ...prev, ...next }))
+      setTableauLoading(false)
+    }
+    void run()
+  }, [tableauDate, selectedStores.join(','), stores.length])
+
+  // Fetch live data from Supabase via /api/live-data (no scrape, no API key needed)
   const fetchLiveData = async () => {
     // Only show loading spinner on first load (when no data exists)
     const isFirstLoad = liveData.length === 0
@@ -1480,12 +1669,8 @@ export default function DashboardPage() {
           if (!liveLastUpdated || newLastScraped.getTime() > liveLastUpdated.getTime()) {
             setLiveLastUpdated(newLastScraped)
           }
-          // Calculate countdown based on actual scraped_at timestamp
-          const countdown = calculateCountdown(json.lastScraped)
-          setRefreshCountdown(countdown)
-        } else {
-          setRefreshCountdown(0)
         }
+        setRefreshCountdown(15 * 60)
       } else {
         throw new Error('Invalid response format')
       }
@@ -1533,61 +1718,23 @@ export default function DashboardPage() {
   //   // Disabled
   // }
 
-  // Auto-refresh countdown timer and periodic data refresh
+  // Auto-refresh countdown timer - count down every second, refresh and reset when 0
   useEffect(() => {
-    if (activeTab !== 'live') {
-      // Clear countdown when switching away
-      setRefreshCountdown(0)
-      return
-    }
-    
-    // Fetch immediately when tab is first activated (only if no data exists)
-    if (liveData.length === 0 && !liveLoading) {
-      void fetchLiveData()
-    }
+    if (activeTab !== 'live') return
 
-    // Calculate initial countdown from lastScraped if available
-    // This ensures countdown is set even if data was already loaded
-    if (liveLastUpdated) {
-      const countdown = calculateCountdown(liveLastUpdated.toISOString())
-      setRefreshCountdown(countdown)
-    } else if (liveData.length > 0) {
-      // If we have data but no lastScraped, show 0 (Due now)
-      setRefreshCountdown(0)
-    }
-
-    // Countdown timer - updates every second and triggers refresh when it crosses 0
     const countdownInterval = setInterval(() => {
-      if (liveLastUpdated) {
       setRefreshCountdown((prev) => {
-          const newCountdown = calculateCountdown(liveLastUpdated.toISOString())
-
-          // When we transition from >0 to <=0, trigger an immediate refresh
-          if (prev > 0 && newCountdown <= 0) {
-            void fetchLiveData()
-          }
-
-          return newCountdown
-        })
-      } else {
-        // If no lastScraped, show 0 (Due now)
-        setRefreshCountdown(0)
-      }
+        const next = prev - 1
+        if (next <= 0) {
+          void fetchLiveData()
+          return 15 * 60
+        }
+        return next
+      })
     }, 1000)
 
-    // Set up a 15-minute polling interval to auto-refresh data (backup)
-    const autoRefreshInterval = setInterval(() => {
-      if (activeTab === 'live') {
-        void fetchLiveData()
-      }
-    }, 15 * 60 * 1000) // 15 minutes
-
-    return () => {
-      clearInterval(countdownInterval)
-      clearInterval(autoRefreshInterval)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, liveLastUpdated])
+    return () => clearInterval(countdownInterval)
+  }, [activeTab])
 
   // Staleness tick - updates every minute so "last scraped X mins ago" stays current
   useEffect(() => {
@@ -1996,6 +2143,40 @@ export default function DashboardPage() {
             >
               Analytics
             </Link>
+            <Link
+              href="/audit"
+              style={{
+                padding: '8px 16px',
+                borderRadius: 8,
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                background: 'transparent',
+                color: 'var(--text-tertiary)',
+                textDecoration: 'none',
+              }}
+              className="tab-btn"
+            >
+              Audit
+            </Link>
+            <Link
+              href="/ai"
+              style={{
+                padding: '8px 16px',
+                borderRadius: 8,
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                background: 'transparent',
+                color: 'var(--text-tertiary)',
+                textDecoration: 'none',
+              }}
+              className="tab-btn"
+            >
+              ✨ AI
+            </Link>
             {[
               ['live', 'Live'],
               ['guest-experience', 'Guest Experience'],
@@ -2195,6 +2376,7 @@ export default function DashboardPage() {
                     Refreshing...
                   </div>
                 )}
+                {/* Refresh Now: reloads latest data from Supabase via /api/live-data only (no scrape; Railway cron runs /api/cron every 15 min) */}
                 <button
                   onClick={() => void fetchLiveData()}
                   disabled={liveLoading}
@@ -2454,7 +2636,7 @@ export default function DashboardPage() {
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 40, textAlign: 'center' }}>
                 <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>No data available</div>
                 <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", marginBottom: 16 }}>
-                  Click "Refresh Now" to fetch live data from the extranet
+                  Click &quot;Refresh Now&quot; to reload the latest data from the database (scraper runs every 15 min on Railway)
                 </div>
                 <button
                   onClick={() => void fetchLiveData()}
@@ -3162,6 +3344,32 @@ export default function DashboardPage() {
             </div>
 
             {/* Date control bar (when LIVE CUBE selected) */}
+            {/* Tableau date (used for Leadership + BoZoCoRo) */}
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 20px', marginBottom: 16 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 6 }}>TABLEAU DATE</div>
+                  <input
+                    type="date"
+                    value={tableauDate}
+                    onChange={(e) => setTableauDate(e.target.value)}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 6,
+                      border: '1px solid var(--border-default)',
+                      background: 'var(--bg-overlay)',
+                      color: 'var(--text-primary)',
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 13,
+                    }}
+                  />
+                </div>
+                {tableauLoading && (
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>Loading Tableau…</div>
+                )}
+              </div>
+            </div>
+
             {dataSource === 'cube' && (
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '16px 20px', marginBottom: 24 }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
@@ -3367,6 +3575,9 @@ export default function DashboardPage() {
                         cubeStore={cubeStore ?? undefined}
                         cubeDateLabel={cubeDateLabelForCard}
                         showLyBanner={showLyBanner}
+                        tableauLeadership={tableauDataByStore[num]?.leadership ?? null}
+                        tableauBozocoro={tableauDataByStore[num]?.bozocoro ?? null}
+                        tableauLoading={tableauLoading}
                       />
                     )
                   })}
