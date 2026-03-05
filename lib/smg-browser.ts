@@ -1,11 +1,35 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
-import { existsSync } from 'fs';
-import path from 'path';
+import { existsSync, writeFileSync, mkdirSync } from 'fs';
+import { createClient } from '@supabase/supabase-js';
 
-const SESSION_FILE = path.join(process.cwd(), 'smg-session.json');
+const SMG_SESSION_PATH = '/tmp/smg-session.json';
+
+export async function loadSMGSessionFromSupabase(): Promise<void> {
+  try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } }
+    );
+    const { data } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'smg_session_state')
+      .single();
+    if (data?.value) {
+      mkdirSync('/tmp', { recursive: true });
+      writeFileSync(SMG_SESSION_PATH, data.value);
+      console.log('[smg-session] Loaded from Supabase → /tmp/smg-session.json');
+    }
+  } catch (err) {
+    console.error('[smg-session] Failed to load from Supabase:', err);
+  }
+}
 
 export async function getSMGAuthenticatedPage(): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
-  if (!existsSync(SESSION_FILE)) {
+  await loadSMGSessionFromSupabase();
+
+  if (!existsSync(SMG_SESSION_PATH)) {
     throw new Error('SMG session file not found. Please run: npx tsx scripts/smg-login.ts');
   }
 
@@ -16,7 +40,7 @@ export async function getSMGAuthenticatedPage(): Promise<{ browser: Browser; con
 
   try {
     // Load session
-    const context = await browser.newContext({ storageState: SESSION_FILE });
+    const context = await browser.newContext({ storageState: SMG_SESSION_PATH });
     const page = await context.newPage();
 
     // Verify session is valid by navigating to SMG dashboard

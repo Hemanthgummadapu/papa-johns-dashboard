@@ -36,7 +36,7 @@ async function run() {
     cur.total += Number(r.amount) || 0
     byTypePeriod.set(key, cur)
   }
-  const sorted = [...byTypePeriod.entries()].sort((a, b) => {
+  const sorted = Array.from(byTypePeriod.entries()).sort((a, b) => {
     const [_, periodA] = a[0].split('\t')
     const [__, periodB] = b[0].split('\t')
     return (periodA || '').localeCompare(periodB || '') || a[0].localeCompare(b[0])
@@ -60,7 +60,7 @@ async function run() {
     const key = `${r.store_number}\t${r.audit_type}`
     byStoreType.set(key, (byStoreType.get(key) ?? 0) + 1)
   }
-  const sorted2 = [...byStoreType.entries()].sort()
+  const sorted2 = Array.from(byStoreType.entries()).sort()
   if (sorted2.length === 0) {
     console.log('(no rows with time_period_label = last_year)')
   } else {

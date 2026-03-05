@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const data = await fetchDataForQuestion(question.dataSources, timePeriod)
+    const data = await fetchDataForQuestion([...question.dataSources], timePeriod)
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

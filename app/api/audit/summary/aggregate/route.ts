@@ -26,7 +26,7 @@ async function fetchAllForPeriod(
       .eq('time_period_label', time_period)
       .range(offset, offset + PAGE_SIZE - 1)
     if (error) throw error
-    const chunk = (data ?? []) as { audit_type: string; amount: number }[]
+    const chunk = (data ?? []) as unknown as { audit_type: string; amount: number }[]
     out.push(...chunk)
     if (chunk.length < PAGE_SIZE) break
     offset += PAGE_SIZE

@@ -55,7 +55,7 @@ export default function SMGDashboardEmbed() {
   const [loading, setLoading] = useState(true)
   const [selectedStore, setSelectedStore] = useState<string | null>(null)
   const [showStoreModal, setShowStoreModal] = useState(false)
-  const [countdown, setCountdown] = useState<string>('')
+  const [countdownSeconds, setCountdownSeconds] = useState(0)
 
   // Fetch data function
   const fetchData = async () => {
@@ -71,6 +71,7 @@ export default function SMGDashboardEmbed() {
         const json = await res.json()
         setData(json.data || [])
         setLastScraped(json.lastScraped || null)
+        setCountdownSeconds(5 * 60 * 60)
       }
     } catch (error) {
       console.error('Error fetching SMG data:', error)
@@ -79,49 +80,37 @@ export default function SMGDashboardEmbed() {
     }
   }
 
-  // Calculate and update countdown for next scrape (every 5 hours)
-  useEffect(() => {
-    const updateCountdown = () => {
-      if (!lastScraped) {
-        setCountdown('—')
-        return
-      }
-
-      const lastScrapedTime = new Date(lastScraped).getTime()
-      const nextScrapeTime = lastScrapedTime + (5 * 60 * 60 * 1000) // 5 hours in milliseconds
-      const now = Date.now()
-      const diff = nextScrapeTime - now
-
-      if (diff <= 0) {
-        setCountdown('Due now')
-        return
-      }
-
-      const hours = Math.floor(diff / (1000 * 60 * 60))
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000)
-
-      if (hours > 0) {
-        setCountdown(`${hours}h ${minutes}m ${seconds}s`)
-      } else if (minutes > 0) {
-        setCountdown(`${minutes}m ${seconds}s`)
-      } else {
-        setCountdown(`${seconds}s`)
-      }
-    }
-
-    updateCountdown()
-    const interval = setInterval(updateCountdown, 1000) // Update every second
-    return () => clearInterval(interval)
-  }, [lastScraped])
-
-  // Auto-refresh every 5 minutes
+  // Auto-countdown: count down every second, refresh when 0 and reset to 5 hours
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchData()
-    }, 5 * 60 * 1000) // refresh every 5 minutes
+      setCountdownSeconds((prev) => {
+        const next = prev - 1
+        if (next <= 0) {
+          fetchData()
+          return 5 * 60 * 60
+        }
+        return next
+      })
+    }, 1000)
     return () => clearInterval(interval)
   }, [])
+
+  // Set initial countdown when data first loads (5 hours in seconds)
+  useEffect(() => {
+    if (lastScraped) {
+      setCountdownSeconds(5 * 60 * 60)
+    }
+  }, [lastScraped])
+
+  const formatCountdownDisplay = (seconds: number) => {
+    if (seconds <= 0) return 'Due now'
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    const s = seconds % 60
+    if (h > 0) return `${h}h ${m}m ${s}s`
+    if (m > 0) return `${m}m ${s}s`
+    return `${s}s`
+  }
 
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -143,6 +132,7 @@ export default function SMGDashboardEmbed() {
   const handleRefresh = async () => {
     setRefreshing(true)
     await fetchData()
+    setCountdownSeconds(5 * 60 * 60)
     setTimeout(() => setRefreshing(false), 1000)
   }
 
@@ -261,7 +251,7 @@ export default function SMGDashboardEmbed() {
         <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
           Next scrape:{' '}
           <span style={{ color: 'var(--text-secondary)', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-            {countdown || '—'}
+            {formatCountdownDisplay(countdownSeconds) || '—'}
           </span>
         </div>
         <button

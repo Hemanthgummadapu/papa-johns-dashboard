@@ -43,7 +43,7 @@ export default function AuditSummaryComparisonTable({ period, refreshKey }: Audi
               ...r,
               percent_change: r.percent_change,
               yoy_change: yoyChange,
-            }
+            } as Record<string, unknown>
           })
           .sort((a, b) => String(a.store_number).localeCompare(String(b.store_number)))
         setData(merged)
