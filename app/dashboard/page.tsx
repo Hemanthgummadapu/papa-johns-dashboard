@@ -179,6 +179,15 @@ const TARGETS: Partial<Record<MetricKey, number>> = {
   ubereats_sales: 4000, // dollar target
 }
 
+const LABOR_TARGETS: Record<string, number> = {
+  '2021': 30,
+  '2081': 30,
+  '2481': 30,
+  '2259': 23,
+  '2292': 23,
+  '3011': 23,
+}
+
 const METRICS: Array<{
   key: MetricKey
   label: string
@@ -575,6 +584,7 @@ function KpiCard({
   tableauLeadership,
   tableauBozocoro,
   tableauLoading,
+  footerHint,
 }: {
   store: StoreUI
   reports: ReportPoint[]
@@ -584,6 +594,7 @@ function KpiCard({
   tableauLeadership?: TableauLeadership | null
   tableauBozocoro?: TableauBozocoro | null
   tableauLoading?: boolean
+  footerHint?: string
 }) {
   const [isFlipped, setIsFlipped] = useState(false)
   const [bozocoroExpanded, setBozocoroExpanded] = useState(false)
@@ -795,37 +806,51 @@ function KpiCard({
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Net Sales</div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(netSalesVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
           <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{compPct != null ? (compPct >= 0 ? '↑' : '↓') + ' vs last year' : '—'}</div>
-        </div>
+              </div>
         <div style={{ background: laborGood ? 'var(--bg-base)' : 'var(--danger-subtle)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: laborGood ? 'var(--text-tertiary)' : 'var(--danger-text)', marginBottom: 4 }}>Labor %</div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: laborGood ? 'var(--success-text)' : 'var(--danger-text)', lineHeight: 1.1 }}>{laborPctVal != null ? `${Number(laborPctVal).toFixed(1)}%` : '—'}</div>
           <div style={{ fontSize: 10.5, color: laborGood ? 'var(--success-text)' : 'var(--danger-text)', marginTop: 2 }}>{laborGood ? `Target: ${laborTarget}%` : '↑ Over target'}</div>
-        </div>
+              </div>
         <div style={{ background: flmGood ? 'var(--bg-base)' : 'var(--danger-subtle)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: flmGood ? 'var(--text-tertiary)' : 'var(--danger-text)', marginBottom: 4 }}>FLM %</div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: flmGood ? 'var(--success-text)' : 'var(--danger-text)', lineHeight: 1.1 }}>{flmPctVal != null ? `${Number(flmPctVal).toFixed(1)}%` : '—'}</div>
           <div style={{ fontSize: 10.5, color: flmGood ? 'var(--success-text)' : 'var(--danger-text)', marginTop: 2 }}>Target: &lt;{flmTarget}%</div>
-        </div>
+            </div>
         <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Food Cost</div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: foodGood ? 'var(--text-primary)' : 'var(--danger-text)', lineHeight: 1.1 }}>
             {foodCostUsdVal != null ? `$${Number(foodCostUsdVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : foodCostPctVal != null ? `${Number(foodCostPctVal).toFixed(1)}%` : '—'}
-          </div>
+      </div>
           <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{foodCostPctVal != null ? `${Number(foodCostPctVal).toFixed(1)}%` : '—'}</div>
-        </div>
+          </div>
         <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Aggregator</div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>
             ${Number(cubeStore ? (aggregatorVal ?? 0) : (Number(dddVal) + Number(aggregatorVal))).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-          </div>
+                </div>
           <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>DD + UE + GH</div>
-        </div>
+          </div>
         <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>DoorDash</div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(dddVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
           <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>—</div>
-        </div>
       </div>
+      </div>
+      {footerHint && (
+        <div
+          style={{
+            padding: '6px 14px',
+            borderTop: '1px solid var(--border-subtle)',
+            fontSize: 10,
+            color: 'var(--text-tertiary)',
+            textAlign: 'center',
+            marginTop: 10,
+          }}
+        >
+          {footerHint}
+        </div>
+      )}
     </div>
   )
 
@@ -1503,6 +1528,7 @@ export default function DashboardPage() {
   }
   const [profitTrendDataByStore, setProfitTrendDataByStore] = useState<Record<string, ProfitTrendPoint[]>>({})
   const [profitLoading, setProfitLoading] = useState(false)
+  const [avgSmgScore, setAvgSmgScore] = useState<number | null>(null)
 
   // Tableau: date picker (default today), data by store, loading, 30-min cache
   const [tableauDate, setTableauDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
@@ -1556,6 +1582,31 @@ export default function DashboardPage() {
     }
 
     void checkScraperStatus()
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/smg-data', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => {
+        const arr = Array.isArray(data) ? data : data?.stores ? data.stores : data?.data ? data.data : []
+        const osatScores = arr
+          .map((s: any) => {
+            const v =
+              s.ranking_store_osat ??
+              s.osat_my_score ??
+              s.osat ??
+              s.osatScore ??
+              s.overall_satisfaction
+            return v != null ? parseFloat(String(v)) : null
+          })
+          .filter((v: number | null): v is number => v !== null && !isNaN(v))
+
+        if (osatScores.length > 0) {
+          const avg = osatScores.reduce((a: number, b: number) => a + b, 0) / osatScores.length
+          setAvgSmgScore(Math.round(avg * 10) / 10)
+        }
+      })
+      .catch(() => {})
   }, [])
 
   const loadCubeData = async (overrideDate?: string, overridePeriod?: CubePeriod) => {
@@ -2143,6 +2194,12 @@ export default function DashboardPage() {
 
   const selectedStoresSafe = selectedStores.filter((n) => stores.some((s) => s.number === n))
 
+  const avgLaborTarget = useMemo(() => {
+    if (!selectedStoresSafe.length) return 28.68
+    const targets = selectedStoresSafe.map((n) => LABOR_TARGETS[n] ?? 28.68)
+    return targets.reduce((a, b) => a + b, 0) / targets.length
+  }, [selectedStoresSafe])
+
   // KPI summary row for dashboard (group totals / averages for selected stores)
   const kpiSummary = useMemo(() => {
     const selected = selectedStoresSafe
@@ -2150,6 +2207,7 @@ export default function DashboardPage() {
     if (dataSource === 'cube' && cubeData?.length) {
       const rows = selected.map((num) => cubeData.find((s) => String(s.storeNumber) === num)).filter(Boolean) as CubeStoreRow[]
       if (rows.length === 0) return null
+      const lyRows = selected.map((num) => cubeDataLY?.find((s) => String(s.storeNumber) === num)).filter(Boolean) as CubeStoreRow[]
       const totalNetSales = rows.reduce((s, r) => s + (r.netSales ?? 0), 0)
       const totalLy = rows.reduce((s, r) => s + (r.lyNetSales ?? 0), 0)
       const compPct = totalLy && totalNetSales ? ((totalNetSales - totalLy) / totalLy) * 100 : null
@@ -2160,6 +2218,7 @@ export default function DashboardPage() {
       const flmPcts = rows.map((r) => r.flmPct).filter((v): v is number => v != null)
       const avgFlm = flmPcts.length ? flmPcts.reduce((a, b) => a + b, 0) / flmPcts.length : null
       const totalOrders = rows.reduce((s, r) => s + (r.totalOrders ?? 0), 0)
+      const totalOrdersLY = lyRows.length ? lyRows.reduce((s, r) => s + (r.totalOrders ?? 0), 0) : null
       return {
         totalNetSales,
         totalLy,
@@ -2168,7 +2227,8 @@ export default function DashboardPage() {
         avgFoodCostPct: avgFood,
         avgFlmPct: avgFlm,
         totalOrders,
-        avgSmgScore: null as number | null,
+        totalOrdersLY,
+        avgSmgScore,
       }
     }
     const reportRows = selected.flatMap((num) => reports[num] || [])
@@ -2187,9 +2247,10 @@ export default function DashboardPage() {
       avgFoodCostPct: avgFood,
       avgFlmPct: avgFlm,
       totalOrders: null,
-      avgSmgScore: null,
+      totalOrdersLY: null,
+      avgSmgScore,
     }
-  }, [dataSource, cubeData, selectedStoresSafe, reports])
+  }, [dataSource, cubeData, cubeDataLY, selectedStoresSafe, reports, avgSmgScore])
 
   // Sales trend for bottom charts row — load historical periods directly from cube
   useEffect(() => {
@@ -2593,30 +2654,30 @@ export default function DashboardPage() {
             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-tertiary)' }}>
               {lastUpdated ? `Updated ${lastUpdated}` : ''}
             </span>
-            <span
-              style={{
+              <span
+                style={{
                 padding: '3px 8px',
                 borderRadius: 5,
-                fontSize: 10,
-                fontWeight: 500,
-                fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 10,
+                  fontWeight: 500,
+                  fontFamily: "'JetBrains Mono', monospace",
                 letterSpacing: '0.06em',
                 border: '1px solid var(--border-default)',
                 background: 'transparent',
                 color: 'var(--text-secondary)',
-              }}
-            >
-              {dataSource === 'cube' && activeCubeDate
+                }}
+              >
+                {dataSource === 'cube' && activeCubeDate
                 ? `CUBE · ${formatCubeDateLabel(activeCubeDate, cubePeriod)}`
-                : dataSource === 'cube'
-                  ? 'LIVE CUBE'
-                  : isRealData
-                    ? 'LIVE DATA'
-                    : 'DEMO DATA'}
-            </span>
+                  : dataSource === 'cube'
+                    ? 'LIVE CUBE'
+                    : isRealData
+                      ? 'LIVE DATA'
+                      : 'DEMO DATA'}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
 
       {/* Alert banner — labor / EBITDA warnings (dashboard tab, when cube data loaded) */}
       {activeTab === 'dashboard' && (() => {
@@ -2661,7 +2722,7 @@ export default function DashboardPage() {
                 {' — '}{a.message}
               </span>
             ))}
-          </div>
+      </div>
         )
       })()}
 
@@ -4632,20 +4693,26 @@ export default function DashboardPage() {
                 </div>
                 <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Avg Labor %</div>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: (TARGETS.labor_pct != null && (kpiSummary.avgLaborPct ?? 0) <= TARGETS.labor_pct) ? 'var(--success-text)' : 'var(--text-primary)', lineHeight: 1.1 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: (kpiSummary.avgLaborPct ?? 0) <= avgLaborTarget ? 'var(--success-text)' : (kpiSummary.avgLaborPct ?? 0) <= avgLaborTarget + 2 ? 'var(--warning-text, #f59e0b)' : 'var(--danger-text)', lineHeight: 1.1 }}>
                     {kpiSummary.avgLaborPct != null ? `${kpiSummary.avgLaborPct.toFixed(1)}%` : '—'}
                   </div>
-                  <div style={{ fontSize: 11, color: (TARGETS.labor_pct != null && (kpiSummary.avgLaborPct ?? 0) <= TARGETS.labor_pct) ? 'var(--success-text)' : 'var(--text-tertiary)' }}>
-                    {(TARGETS.labor_pct != null && (kpiSummary.avgLaborPct ?? 0) <= TARGETS.labor_pct) ? 'On target' : '—'}
+                  <div style={{ fontSize: 11, color: (kpiSummary.avgLaborPct ?? 0) <= avgLaborTarget ? 'var(--success-text)' : 'var(--danger-text)' }}>
+                    {`Target: <${avgLaborTarget.toFixed(1)}%`}
                   </div>
                 </div>
                 <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Avg Food Cost</div>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: (TARGETS.food_cost_pct != null && (kpiSummary.avgFoodCostPct ?? 0) <= TARGETS.food_cost_pct) ? 'var(--success-text)' : (kpiSummary.avgFoodCostPct ?? 0) > (TARGETS.food_cost_pct ?? 0) ? 'var(--warning-text, #f59e0b)' : 'var(--text-primary)', lineHeight: 1.1 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: (kpiSummary.avgFoodCostPct ?? 0) <= 23 ? 'var(--success-text)' : (kpiSummary.avgFoodCostPct ?? 0) <= 24.5 ? 'var(--warning-text, #f59e0b)' : 'var(--danger-text)', lineHeight: 1.1 }}>
                     {kpiSummary.avgFoodCostPct != null ? `${kpiSummary.avgFoodCostPct.toFixed(1)}%` : '—'}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                    {TARGETS.food_cost_pct != null && kpiSummary.avgFoodCostPct != null ? `${(kpiSummary.avgFoodCostPct - TARGETS.food_cost_pct >= 0 ? '+' : '')}${(kpiSummary.avgFoodCostPct - TARGETS.food_cost_pct).toFixed(1)}% vs ideal` : '—'}
+                  <div style={{ fontSize: 11, color: kpiSummary.avgFoodCostPct != null ? ((kpiSummary.avgFoodCostPct - 23.0) <= 0 ? 'var(--success-text)' : (kpiSummary.avgFoodCostPct - 23.0) <= 1.5 ? 'var(--warning-text, #f59e0b)' : 'var(--danger-text)') : 'var(--text-tertiary)' }}>
+                    {kpiSummary.avgFoodCostPct != null
+                      ? (kpiSummary.avgFoodCostPct - 23.0) <= 0
+                        ? `↓ ${Math.abs(kpiSummary.avgFoodCostPct - 23.0).toFixed(1)}% below ideal`
+                        : (kpiSummary.avgFoodCostPct - 23.0) <= 1.5
+                          ? `+${(kpiSummary.avgFoodCostPct - 23.0).toFixed(1)}% vs ideal`
+                          : `▲ +${(kpiSummary.avgFoodCostPct - 23.0).toFixed(1)}% above ideal`
+                      : '—'}
                   </div>
                 </div>
                 <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -4662,14 +4729,23 @@ export default function DashboardPage() {
                   <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>
                     {kpiSummary.totalOrders != null ? kpiSummary.totalOrders.toLocaleString() : '—'}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>—</div>
+                  <div style={{ fontSize: 11, color: kpiSummary.totalOrders != null && kpiSummary.totalOrdersLY != null && kpiSummary.totalOrdersLY > 0 ? (((kpiSummary.totalOrders - kpiSummary.totalOrdersLY) / kpiSummary.totalOrdersLY) * 100 < 0 ? 'var(--danger-text)' : 'var(--success-text)') : 'var(--text-tertiary)' }}>
+                    {kpiSummary.totalOrders != null && kpiSummary.totalOrdersLY != null && kpiSummary.totalOrdersLY > 0
+                      ? `${((kpiSummary.totalOrders - kpiSummary.totalOrdersLY) / kpiSummary.totalOrdersLY) * 100 < 0 ? '↓' : '↑'} ${Math.abs(((kpiSummary.totalOrders - kpiSummary.totalOrdersLY) / kpiSummary.totalOrdersLY) * 100).toFixed(1)}% vs LY`
+                      : '—'}
+                  </div>
                 </div>
                 <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Avg SMG Score</div>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: 'var(--success-text)', lineHeight: 1.1 }}>
-                    {kpiSummary.avgSmgScore != null ? kpiSummary.avgSmgScore.toFixed(1) : '—'}
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: kpiSummary.avgSmgScore === null ? 'var(--text-primary)' : kpiSummary.avgSmgScore < 75 ? '#ef4444' : kpiSummary.avgSmgScore < 80 ? '#f59e0b' : '#22c55e', lineHeight: 1.1 }}>
+                    {kpiSummary.avgSmgScore !== null ? kpiSummary.avgSmgScore.toFixed(1) : '—'}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>—</div>
+                  <div style={{ fontSize: 11, color: kpiSummary.avgSmgScore === null ? 'var(--text-tertiary)' : kpiSummary.avgSmgScore < 75 ? '#ef4444' : kpiSummary.avgSmgScore < 80 ? '#f59e0b' : '#22c55e' }}>
+                    {kpiSummary.avgSmgScore === null ? '—' : kpiSummary.avgSmgScore < 75 ? '↓ Below target' : '↑ Above target'}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>
+                    (current period)
+                  </div>
                 </div>
               </div>
             )}
@@ -4690,225 +4766,187 @@ export default function DashboardPage() {
             >
               {/* Left: store chips + All · None */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                {stores.map((s, i) => {
-                  const isSelected = selectedStoresSafe.includes(s.number)
-                  const storeColor = STORE_COLORS[i % STORE_COLORS.length]
-                  return (
-                    <div
-                      key={s.number}
-                      className={`store-chip ${isSelected ? 'active' : ''}`}
-                      onClick={() => toggleStore(s.number)}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: 6,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        border: `1px solid ${isSelected ? storeColor : 'var(--border-default)'}`,
-                        background: isSelected ? `${storeColor}15` : 'var(--bg-overlay)',
-                        color: isSelected ? storeColor : 'var(--text-tertiary)',
-                        fontFamily: "'Inter', sans-serif",
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {s.number}
-                    </div>
-                  )
-                })}
-                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
-                  <span style={{ color: 'var(--brand)', cursor: 'pointer', fontWeight: 500 }} onClick={selectAll}>All</span>
+                    {stores.map((s, i) => {
+                      const isSelected = selectedStoresSafe.includes(s.number)
+                      const storeColor = STORE_COLORS[i % STORE_COLORS.length]
+                      return (
+                        <div
+                          key={s.number}
+                          className={`store-chip ${isSelected ? 'active' : ''}`}
+                          onClick={() => toggleStore(s.number)}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: 6,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            border: `1px solid ${isSelected ? storeColor : 'var(--border-default)'}`,
+                            background: isSelected ? `${storeColor}15` : 'var(--bg-overlay)',
+                            color: isSelected ? storeColor : 'var(--text-tertiary)',
+                            fontFamily: "'Inter', sans-serif",
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {s.number}
+                        </div>
+                      )
+                    })}
+                <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
+                  <span style={{ color: 'var(--text-tertiary)', cursor: 'pointer', fontWeight: 500 }} onClick={selectAll}>All</span>
                   {' · '}
-                  <span style={{ cursor: 'pointer', fontWeight: 500 }} onClick={selectNone}>None</span>
+                  <span style={{ color: 'var(--text-tertiary)', cursor: 'pointer', fontWeight: 500 }} onClick={selectNone}>None</span>
                 </span>
-              </div>
-
-              <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', flexShrink: 0 }} />
-
-              {/* Middle: metric focus chips (no label) */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                {METRICS.filter((m) => ['net_sales', 'labor_pct', 'food_cost_pct', 'flm_pct', 'doordash_sales', 'ubereats_sales'].includes(m.key)).map((m) => (
-                  <div
-                    key={m.key}
-                    className={`metric-chip ${activeMetric === m.key ? 'active' : ''}`}
-                    onClick={() => setActiveMetric((prev) => (prev === m.key ? null : m.key))}
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontWeight: 500,
-                      border: `1px solid ${activeMetric === m.key ? 'var(--info)' : 'var(--border-default)'}`,
-                      background: activeMetric === m.key ? 'var(--info-subtle)' : 'transparent',
-                      color: activeMetric === m.key ? 'var(--info-text)' : 'var(--text-tertiary)',
-                      fontFamily: "'Inter', sans-serif",
-                      cursor: 'pointer',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (activeMetric !== m.key) {
-                        e.currentTarget.style.borderColor = 'var(--border-strong)'
-                        e.currentTarget.style.color = 'var(--text-secondary)'
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (activeMetric !== m.key) {
-                        e.currentTarget.style.borderColor = 'var(--border-default)'
-                        e.currentTarget.style.color = 'var(--text-tertiary)'
-                      }
-                    }}
-                  >
-                    {m.label}
-                  </div>
-                ))}
-              </div>
+                </div>
 
               <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', flexShrink: 0 }} />
 
               {/* Right: period + picker + Load Cube (when cube) */}
-              {dataSource === 'cube' && (
-                <>
-                  <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
-                    {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((p) => (
-                      <button
-                        key={p}
-                        onClick={() => {
-                          const newDate = p === 'daily' ? getYesterdayDate() : p === 'weekly' ? getDefaultWeek() : p === 'monthly' ? getDefaultMonth() : String(new Date().getFullYear())
-                          setCubePeriod(p)
-                          setCubeDate(newDate)
-                          void loadCubeData(newDate, p)
-                        }}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: 6,
-                          border: 'none',
-                          cursor: 'pointer',
-                          fontFamily: "'Inter', sans-serif",
+            {dataSource === 'cube' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                      {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => {
+                            const newDate = p === 'daily' ? getYesterdayDate() : p === 'weekly' ? getDefaultWeek() : p === 'monthly' ? getDefaultMonth() : String(new Date().getFullYear())
+                            setCubePeriod(p)
+                            setCubeDate(newDate)
+                            void loadCubeData(newDate, p)
+                          }}
+                          style={{
+                          padding: '4px 10px',
+                          borderRadius: 5,
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontFamily: "'Inter', sans-serif",
                           fontSize: 12,
-                          fontWeight: 600,
-                          letterSpacing: '0.04em',
-                          background: cubePeriod === p ? 'var(--bg-elevated)' : 'transparent',
-                          color: cubePeriod === p ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                        }}
-                      >
-                        {p === 'daily' ? 'Day' : p === 'weekly' ? 'Week' : p === 'monthly' ? 'Month' : 'Year'}
-                      </button>
-                    ))}
-                  </div>
-                  {cubePeriod === 'yearly' ? (
-                    <select
-                      value={cubeDate}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setCubeDate(val)
-                        void loadCubeData(val, 'yearly')
-                      }}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: 6,
-                        border: '1px solid var(--border-default)',
-                        background: 'var(--bg-overlay)',
-                        color: 'var(--text-primary)',
-                        fontFamily: "'Inter', sans-serif",
-                        fontSize: 12,
-                      }}
-                    >
-                      {[2022, 2023, 2024, 2025, 2026].map((y) => (
-                        <option key={y} value={String(y)}>{y}</option>
+                            fontWeight: 600,
+                            letterSpacing: '0.04em',
+                          background: cubePeriod === p ? 'var(--brand)' : 'transparent',
+                          color: cubePeriod === p ? '#fff' : 'var(--text-tertiary)',
+                          }}
+                        >
+                          {p === 'daily' ? 'Day' : p === 'weekly' ? 'Week' : p === 'monthly' ? 'Month' : 'Year'}
+                        </button>
                       ))}
-                    </select>
-                  ) : cubePeriod === 'weekly' ? (
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    </div>
+                    {cubePeriod === 'yearly' ? (
                       <select
-                        value={cubeDate.includes('-W') ? cubeDate.split('-')[0] : String(new Date().getFullYear())}
+                        value={cubeDate}
                         onChange={(e) => {
-                          const year = e.target.value
-                          const week = cubeDate.includes('-W') ? (cubeDate.split('-W')[1] || '1') : String(getDefaultWeek().split('-W')[1] || '1')
-                          const val = `${year}-W${week.padStart(2, '0')}`
+                          const val = e.target.value
                           setCubeDate(val)
-                          void loadCubeData(val, 'weekly')
+                          void loadCubeData(val, 'yearly')
                         }}
                         style={{
-                          padding: '6px 10px',
+                        padding: '4px 10px',
                           borderRadius: 6,
-                          border: '1px solid var(--border-default)',
+                        border: '1px solid var(--border-subtle)',
                           background: 'var(--bg-overlay)',
                           color: 'var(--text-primary)',
                           fontFamily: "'Inter', sans-serif",
-                          fontSize: 12,
+                        fontSize: 12,
                         }}
                       >
                         {[2022, 2023, 2024, 2025, 2026].map((y) => (
                           <option key={y} value={String(y)}>{y}</option>
                         ))}
                       </select>
-                      <select
-                        value={cubeDate.includes('-W') ? parseInt(cubeDate.split('-W')[1] || '1', 10) : parseInt(getDefaultWeek().split('-W')[1] || '1', 10)}
+                    ) : cubePeriod === 'weekly' ? (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                        <select
+                          value={cubeDate.includes('-W') ? cubeDate.split('-')[0] : String(new Date().getFullYear())}
+                          onChange={(e) => {
+                            const year = e.target.value
+                            const week = cubeDate.includes('-W') ? (cubeDate.split('-W')[1] || '1') : String(getDefaultWeek().split('-W')[1] || '1')
+                            const val = `${year}-W${week.padStart(2, '0')}`
+                            setCubeDate(val)
+                            void loadCubeData(val, 'weekly')
+                          }}
+                          style={{
+                          padding: '4px 10px',
+                            borderRadius: 6,
+                          border: '1px solid var(--border-subtle)',
+                            background: 'var(--bg-overlay)',
+                            color: 'var(--text-primary)',
+                            fontFamily: "'Inter', sans-serif",
+                          fontSize: 12,
+                          }}
+                        >
+                          {[2022, 2023, 2024, 2025, 2026].map((y) => (
+                            <option key={y} value={String(y)}>{y}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={cubeDate.includes('-W') ? parseInt(cubeDate.split('-W')[1] || '1', 10) : parseInt(getDefaultWeek().split('-W')[1] || '1', 10)}
+                          onChange={(e) => {
+                            const week = e.target.value
+                            const year = cubeDate.includes('-W') ? cubeDate.split('-')[0] : String(new Date().getFullYear())
+                            const val = `${year}-W${String(week).padStart(2, '0')}`
+                            setCubeDate(val)
+                            void loadCubeData(val, 'weekly')
+                          }}
+                          style={{
+                          padding: '4px 10px',
+                            borderRadius: 6,
+                          border: '1px solid var(--border-subtle)',
+                            background: 'var(--bg-overlay)',
+                            color: 'var(--text-primary)',
+                            fontFamily: "'Inter', sans-serif",
+                          fontSize: 12,
+                          }}
+                        >
+                          {Array.from({ length: 52 }, (_, i) => i + 1).map((w) => (
+                          <option key={w} value={w}>W{w}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <input
+                        type={cubePeriod === 'daily' ? 'date' : 'month'}
+                        value={cubeDate}
                         onChange={(e) => {
-                          const week = e.target.value
-                          const year = cubeDate.includes('-W') ? cubeDate.split('-')[0] : String(new Date().getFullYear())
-                          const val = `${year}-W${String(week).padStart(2, '0')}`
+                          const val = e.target.value
                           setCubeDate(val)
-                          void loadCubeData(val, 'weekly')
+                          void loadCubeData(val, cubePeriod)
                         }}
                         style={{
-                          padding: '6px 10px',
+                        padding: '4px 10px',
                           borderRadius: 6,
-                          border: '1px solid var(--border-default)',
+                        border: '1px solid var(--border-subtle)',
                           background: 'var(--bg-overlay)',
                           color: 'var(--text-primary)',
                           fontFamily: "'Inter', sans-serif",
-                          fontSize: 12,
-                        }}
-                      >
-                        {Array.from({ length: 52 }, (_, i) => i + 1).map((w) => (
-                          <option key={w} value={w}>W{w}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : (
-                    <input
-                      type={cubePeriod === 'daily' ? 'date' : 'month'}
-                      value={cubeDate}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setCubeDate(val)
-                        void loadCubeData(val, cubePeriod)
-                      }}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: 6,
-                        border: '1px solid var(--border-default)',
-                        background: 'var(--bg-overlay)',
-                        color: 'var(--text-primary)',
-                        fontFamily: "'Inter', sans-serif",
                         fontSize: 12,
-                      }}
-                    />
-                  )}
-                  <button
-                    onClick={() => void loadCubeData()}
-                    disabled={cubeLoading}
-                    style={{
+                        }}
+                      />
+                    )}
+                    <button
+                      onClick={() => void loadCubeData()}
+                      disabled={cubeLoading}
+                      style={{
                       padding: '6px 14px',
                       borderRadius: 6,
-                      border: 'none',
-                      cursor: cubeLoading ? 'not-allowed' : 'pointer',
-                      fontFamily: "'Inter', sans-serif",
+                        border: 'none',
+                        cursor: cubeLoading ? 'not-allowed' : 'pointer',
+                        fontFamily: "'Inter', sans-serif",
                       fontSize: 12,
-                      fontWeight: 600,
-                      letterSpacing: '0.04em',
-                      background: 'var(--brand)',
-                      color: '#fff',
-                    }}
-                  >
-                    {cubeLoading ? (
-                      <>
+                        fontWeight: 600,
+                        letterSpacing: '0.04em',
+                        background: 'var(--brand)',
+                        color: '#fff',
+                      }}
+                    >
+                      {cubeLoading ? (
+                        <>
                         <span style={{ display: 'inline-block', width: 10, height: 10, border: '2px solid rgba(255,255,255,0.5)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginRight: 6, verticalAlign: 'middle' }} />
-                        Loading…
-                      </>
-                    ) : (
-                      'Load Cube Data'
-                    )}
-                  </button>
-                </>
-              )}
+                          Loading…
+                        </>
+                      ) : (
+                        'Load Cube Data'
+                      )}
+                    </button>
+              </div>
+            )}
 
             </div>
 
@@ -4923,7 +4961,7 @@ export default function DashboardPage() {
                     alignItems: 'start',
                   }}
                 >
-                  {selectedStoresSafe.map((num) => {
+                  {selectedStoresSafe.map((num, index) => {
                     const store = stores.find((s) => s.number === num)
                     if (!store) return null
                     // TODO: LY toggle - re-enable when LY data query is stable. For now always TY.
@@ -4945,6 +4983,7 @@ export default function DashboardPage() {
                         tableauLeadership={tableauDataByStore[num]?.leadership ?? null}
                         tableauBozocoro={tableauDataByStore[num]?.bozocoro ?? null}
                         tableauLoading={tableauLoading}
+                        footerHint={selectedStoresSafe.length === 6 && index === 0 ? 'Click store chip above to isolate this store' : undefined}
                       />
                     )
                   })}
@@ -4952,21 +4991,49 @@ export default function DashboardPage() {
 
                 {/* Single Store Date Compare */}
                 {selectedStoresSafe.length === 1 && (
-                  <SingleStoreDateCompare
-                    store={stores.find((s) => s.number === selectedStoresSafe[0])!}
-                    cubeData={cubeData}
-                    cubePeriod={cubePeriod}
-                    cubeDate={cubeDate}
-                    metrics={METRICS}
-                    storeColor={STORE_COLORS[stores.findIndex((s) => s.number === selectedStoresSafe[0]) % STORE_COLORS.length]}
-                  />
+                  <>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '8px 12px',
+                        marginBottom: 12,
+                        background: 'rgba(232,68,26,0.06)',
+                        border: '1px solid rgba(232,68,26,0.15)',
+                        borderRadius: 8,
+                        fontSize: 12,
+                        color: 'var(--text-tertiary)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <span style={{ color: 'var(--brand)' }}>↓</span>
+                      <span>
+                        Showing detailed comparison for
+                        <strong style={{ color: 'var(--text-primary)', marginLeft: 4 }}>
+                          {stores.find((s) => s.number === selectedStoresSafe[0])?.name}
+                        </strong>
+                      </span>
+                      <span style={{ marginLeft: 'auto', fontSize: 11 }}>
+                        Select multiple stores to see group overview
+                      </span>
+                    </div>
+                    <SingleStoreDateCompare
+                      store={stores.find((s) => s.number === selectedStoresSafe[0])!}
+                      cubeData={cubeData}
+                      cubePeriod={cubePeriod}
+                      cubeDate={cubeDate}
+                      metrics={METRICS}
+                      storeColor={STORE_COLORS[stores.findIndex((s) => s.number === selectedStoresSafe[0]) % STORE_COLORS.length]}
+                    />
+                  </>
                 )}
 
                 {/* Chart or Full Report */}
                 {activeMetric ? (
                   <ChartSection selectedStores={selectedStoresSafe} activeMetric={activeMetric} reports={reports} viewMode={viewMode} />
                 ) : (
-                  <FullReportTable selectedStores={selectedStoresSafe} stores={stores} reports={reports} />
+                  null /* <FullReportTable selectedStores={selectedStoresSafe} stores={stores} reports={reports} /> */
                 )}
 
                 {/* Bottom charts row — weekly trend, labor ranking, food cost variance (mockup) */}
@@ -5081,8 +5148,8 @@ export default function DashboardPage() {
                                 </div>
                               )}
                             </div>
-                          </>
-                        )}
+              </>
+            )}
                       </div>
                       <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 16 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 14 }}>👥 Labor % Ranking</div>
@@ -5134,7 +5201,7 @@ export default function DashboardPage() {
                 })()}
               </>
 
-            {/* Targets row — slim chips per mockup */}
+            {/* Targets row — slim chips per mockup
             <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {METRICS.map((m) => {
                 const isDollarTarget = m.key === 'net_sales' || m.key === 'cash_short' || m.key === 'doordash_sales' || m.key === 'ubereats_sales'
@@ -5181,10 +5248,11 @@ export default function DashboardPage() {
                         {onTarget ? 'ON TARGET' : 'OFF TARGET'}
                       </span>
                     )}
-                  </div>
+                </div>
                 )
               })}
             </div>
+            */}
           </div>
         )}
       </div>

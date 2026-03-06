@@ -388,9 +388,15 @@ export default function SingleStoreDateCompare({
   if (!currentStore) {
     return (
       <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 24 }}>
-        <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>
-          {store.name} — Date Comparison
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <div style={{ width: 3, height: 20, borderRadius: 2, background: storeColor }} />
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
+            {store.name} — Period Comparison
           </div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>
+            vs previous periods
+          </div>
+        </div>
         <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Load cube data to see comparison.</div>
       </div>
     )
@@ -399,10 +405,13 @@ export default function SingleStoreDateCompare({
   return (
     <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 24 }}>
       <div style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <div style={{ width: 3, height: 24, borderRadius: 2, background: storeColor }} />
-          <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>
-            {store.name} — Date Comparison
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <div style={{ width: 3, height: 20, borderRadius: 2, background: storeColor }} />
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
+            {store.name} — Period Comparison
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>
+            vs previous periods
           </div>
         </div>
 
