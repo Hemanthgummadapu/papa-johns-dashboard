@@ -1,7 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import {
+  IDEAL_FOOD_COST_P3_2026,
+  IDEAL_SIZE_OPTIONS,
+  IDEAL_CUSTOM_TOPPING_NAMES,
+  IDEAL_SPECIALTY_NAMES,
+  type IdealSizeKey,
+} from '@/lib/idealFoodCost'
 
 type AggregatorResult = {
   menuPrice: number
@@ -425,63 +432,80 @@ export default function ProfitabilityAnalyticsPage() {
     [menuPrice, ueCommission, digitalFeePct, promoDiscount, foodCostPct]
   )
 
-  // ── Tool 2 — Competitor Positioning Table ─────────────────────────────────────
-  const [rows, setRows] = useState<CompetitorRow[]>([
-    {
-      id: 'our',
-      brand: 'Papa Johns (Our Stores)',
-      channel: 'DoorDash',
-      specialOffer: 'Varies by store',
-      price: '26.39',
-      customerPays: '25.20',
-      minCart: '0',
-      ourPosition: 'Avg ticket from cube — highest menu price',
-    },
-    {
-      id: 'competitor-la',
-      brand: 'Papa Johns (Competitor LA)',
-      channel: 'DoorDash',
-      specialOffer: 'None active',
-      price: '21.49',
-      customerPays: '25.52',
-      minCart: '0',
-      ourPosition: 'Non-Brad LA franchise — $5 cheaper menu',
-    },
-    {
-      id: 'dominos',
-      brand: 'Dominos',
-      channel: 'DoorDash',
-      specialOffer: '40% off select items',
-      price: '13.79',
-      customerPays: '17.27',
-      minCart: '21',
-      ourPosition: 'LOWEST total — $7.93 cheaper than our stores',
-    },
-    {
-      id: 'little-caesars',
-      brand: 'Little Caesars',
-      channel: 'DoorDash',
-      specialOffer: 'None (DashPass $12+)',
-      price: '11.08',
-      customerPays: '22.87',
-      minCart: '0',
-      ourPosition: 'Cheap pizza but $7.99 delivery fee kills value',
-    },
-    {
-      id: 'pizzahut',
-      brand: 'Pizza Hut',
-      channel: 'DoorDash',
-      specialOffer: 'None active',
-      price: '24.27',
-      customerPays: '28.02',
-      minCart: '0',
-      ourPosition: 'Most expensive total — only brand above us',
-    },
-  ])
+  // ── Tool 3 — Ideal Food Cost Calculator ─────────────────────────────────────
+  const [idealPizzaType, setIdealPizzaType] = useState<string>('Custom Pizza')
+  const [idealSize, setIdealSize] = useState<IdealSizeKey>('12"')
+  const [idealToppings, setIdealToppings] = useState<Set<string>>(new Set())
+  const [idealMenuPrice, setIdealMenuPrice] = useState<string>('')
+  const [idealStore, setIdealStore] = useState<string>('')
+  const [idealCubeFoodPct, setIdealCubeFoodPct] = useState<number | null>(null)
+  const [idealCubeLoading, setIdealCubeLoading] = useState(false)
+  useEffect(() => {
+    if (!idealStore) {
+      setIdealCubeFoodPct(null)
+      return
+    }
+    let cancelled = false
+    setIdealCubeLoading(true)
+    const now = new Date()
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    fetch(`/api/cube?date=${encodeURIComponent(date)}&period=monthly`, { cache: 'no-store', credentials: 'include' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled || !json?.success || !Array.isArray(json.stores)) return
+        const store = (json.stores as Array<{ storeNumber: string; actualFoodPct?: number | null; netSales?: number | null; foodCostUsd?: number | null }>).find(
+          (s) => String(s.storeNumber) === idealStore
+        )
+        if (store?.actualFoodPct != null && !Number.isNaN(store.actualFoodPct)) {
+          setIdealCubeFoodPct(store.actualFoodPct)
+        } else if (store && (store.netSales ?? 0) > 0 && (store.foodCostUsd ?? 0) >= 0) {
+          setIdealCubeFoodPct(((store.foodCostUsd ?? 0) / (store.netSales ?? 1)) * 100)
+        } else {
+          setIdealCubeFoodPct(null)
+        }
+      })
+      .catch(() => { if (!cancelled) setIdealCubeFoodPct(null) })
+      .finally(() => { if (!cancelled) setIdealCubeLoading(false) })
+    return () => { cancelled = true }
+  }, [idealStore])
 
-  const handleRowChange = (id: string, field: keyof CompetitorRow, value: string) => {
-    setRows((prev) => prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)))
-  }
+  const idealCostResult = useMemo(() => {
+    const data = IDEAL_FOOD_COST_P3_2026
+    const baseCost = (data.baseCosts as Record<string, number>)[idealSize] ?? 0
+    const toppingLines: { name: string; cost: number }[] = []
+
+    if (idealPizzaType === 'Custom Pizza') {
+      let toppingCost = 0
+      const costs = data.toppingCosts as Record<string, Record<string, number>>
+      for (const name of Array.from(idealToppings)) {
+        const costBySize = costs[name]
+        if (costBySize) {
+          const cost = costBySize[idealSize] ?? 0
+          toppingCost += cost
+          toppingLines.push({ name, cost })
+        }
+      }
+      const totalCost = baseCost + toppingCost
+      const menuPrice = toNumber(idealMenuPrice) || 0
+      const idealPct = menuPrice > 0 ? (totalCost / menuPrice) * 100 : 0
+      return { baseCost, toppingCost, totalCost, idealPct, toppingLines }
+    }
+
+    const specialtyTotals = data.specialtyPizzas as Record<string, Record<string, number>>
+    const totalCost = specialtyTotals[idealPizzaType]?.[idealSize] ?? 0
+    const menuPrice = toNumber(idealMenuPrice) || 0
+    const idealPct = menuPrice > 0 ? (totalCost / menuPrice) * 100 : 0
+    return { baseCost, toppingCost: totalCost - baseCost, totalCost, idealPct, toppingLines }
+  }, [idealSize, idealPizzaType, idealToppings, idealMenuPrice])
+
+  const toggleIdealTopping = useCallback((name: string) => {
+    setIdealToppings((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }, [])
 
   // ── Tool 2 — Promo Simulator (linked to Tool 1: menu price, DD commission %, food cost %, digital fee) ──
   const [promoType, setPromoType] = useState<PromoType>('BOGO')
@@ -2073,140 +2097,176 @@ export default function ProfitabilityAnalyticsPage() {
             })()}
           </section>
 
-          {/* Tool 3 — Competitor Positioning Table */}
+          {/* Tool 3 — Ideal Food Cost Calculator */}
           <section>
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                  Tool 3 — Competitor Positioning
-                </h2>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  Capture LA/SF competitor offers and see where our ticket sits in the price ladder.
-                </p>
-              </div>
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-[var(--text-primary)]">
+                Tool 3 — Ideal Food Cost Calculator
+              </h2>
+              <p className="text-xs text-[var(--text-secondary)]">
+                Build any pizza and see the theoretical ingredient cost. Compare to actual food cost % from cube to find variance.
+              </p>
             </div>
-
-            <div className="overflow-x-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-              <table className="min-w-[1200px] border-collapse text-sm">
-                <thead>
-                  <tr className="bg-[var(--bg-overlay)] text-[11px] uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-                    <th className="px-4 py-3 text-left">Brand</th>
-                    <th className="px-4 py-3 text-left">Channel</th>
-                    <th className="px-4 py-3 text-left">Special Offer</th>
-                    <th className="px-4 py-3 text-left">Pizza Price</th>
-                    <th className="px-4 py-3 text-left">Customer Pays (before tip)</th>
-                    <th className="px-4 py-3 text-left">Min Cart</th>
-                    <th className="px-4 py-3 text-left">Notes</th>
-                    <th className="px-4 py-3 text-left">Position Badge</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, idx) => {
-                    const customerTotal = toNumber(row.customerPays)
-                    const badge = getPositionBadgeByCustomerTotal(
-                      Number.isFinite(customerTotal) ? customerTotal : null
-                    )
-                    const isOurRow = row.id === 'our'
-
-                    return (
-                      <tr
-                        key={row.id}
-                        className={idx % 2 === 0 ? 'bg-[var(--bg-surface)]' : 'bg-[var(--bg-elevated)]'}
-                      >
-                        <td className="whitespace-nowrap px-4 py-3 text-[var(--text-primary)]">
-                          <input
-                            type="text"
-                            value={row.brand}
-                            onChange={(e) => handleRowChange(row.id, 'brand', e.target.value)}
-                            className="w-full min-w-[140px] rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-[var(--text-primary)] focus:border-[var(--border-default)] focus:bg-[var(--bg-overlay)] focus:outline-none"
-                          />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3">
-                          <input
-                            type="text"
-                            value={row.channel}
-                            onChange={(e) => handleRowChange(row.id, 'channel', e.target.value)}
-                            className="w-full min-w-[80px] rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-[var(--text-primary)] focus:border-[var(--border-default)] focus:bg-[var(--bg-overlay)] focus:outline-none"
-                            placeholder="DoorDash / UE / etc."
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <input
-                            type="text"
-                            value={row.specialOffer}
-                            onChange={(e) => handleRowChange(row.id, 'specialOffer', e.target.value)}
-                            className="w-full min-w-[120px] rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-[var(--text-primary)] focus:border-[var(--border-default)] focus:bg-[var(--bg-overlay)] focus:outline-none"
-                            placeholder="BOGO, % off, etc."
-                          />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3">
-                          <div className="flex items-center gap-1">
-                            <span className="text-[var(--text-tertiary)]">$</span>
+            <p className="mb-3 text-[11px] text-[var(--text-tertiary)]">
+              {IDEAL_FOOD_COST_P3_2026.period} | Cheese Case: {formatCurrency(IDEAL_FOOD_COST_P3_2026.cheeseCasePrice)}
+            </p>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
+                <div className="mb-4 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Pizza builder</div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-xs text-[var(--text-secondary)]">Pizza type</label>
+                    <select
+                      value={idealPizzaType}
+                      onChange={(e) => setIdealPizzaType(e.target.value)}
+                      className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                    >
+                      {IDEAL_SPECIALTY_NAMES.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs text-[var(--text-secondary)]">Size</label>
+                    <div className="flex flex-wrap gap-2">
+                      {IDEAL_SIZE_OPTIONS.map(({ key, label }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setIdealSize(key)}
+                          className={`rounded-full px-4 py-1.5 text-sm font-semibold ${idealSize === key ? 'bg-[var(--brand)] text-white' : 'bg-[var(--bg-overlay)] text-[var(--text-secondary)]'}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {idealPizzaType === 'Custom Pizza' && (
+                    <div>
+                      <label className="mb-2 block text-xs text-[var(--text-secondary)]">Toppings</label>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                        {IDEAL_CUSTOM_TOPPING_NAMES.map((name) => (
+                          <label key={name} className="flex cursor-pointer items-center gap-2 text-sm text-[var(--text-primary)]">
                             <input
-                              type="number"
-                              min={0}
-                              step={0.01}
-                              value={row.price}
-                              onChange={(e) => handleRowChange(row.id, 'price', e.target.value)}
-                              className="w-20 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-[var(--text-primary)] focus:border-[var(--border-default)] focus:bg-[var(--bg-overlay)] focus:outline-none"
-                              placeholder="0"
+                              type="checkbox"
+                              checked={idealToppings.has(name)}
+                              onChange={() => toggleIdealTopping(name)}
+                              className="rounded border-[var(--border-default)]"
                             />
-                          </div>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3">
-                          <div className="flex items-center gap-1">
-                            <span className="text-[var(--text-tertiary)]">$</span>
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.01}
-                              value={row.customerPays}
-                              onChange={(e) => handleRowChange(row.id, 'customerPays', e.target.value)}
-                              className="w-20 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm font-medium text-[var(--text-primary)] focus:border-[var(--border-default)] focus:bg-[var(--bg-overlay)] focus:outline-none"
-                              placeholder="0"
-                              title="What the customer actually pays at checkout (before tip)"
-                            />
-                          </div>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3">
-                          <div className="flex items-center gap-1">
-                            <span className="text-[var(--text-tertiary)]">$</span>
-                            <input
-                              type="number"
-                              min={0}
-                              step={1}
-                              value={row.minCart}
-                              onChange={(e) => handleRowChange(row.id, 'minCart', e.target.value)}
-                              className="w-16 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-[var(--text-primary)] focus:border-[var(--border-default)] focus:bg-[var(--bg-overlay)] focus:outline-none"
-                              placeholder="0"
-                            />
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <input
-                            type="text"
-                            value={row.ourPosition}
-                            onChange={(e) => handleRowChange(row.id, 'ourPosition', e.target.value)}
-                            className="w-full min-w-[180px] rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-[var(--text-primary)] focus:border-[var(--border-default)] focus:bg-[var(--bg-overlay)] focus:outline-none"
-                            placeholder={isOurRow ? 'Notes' : 'Notes vs our offer'}
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          {badge ? (
-                            <span
-                              className={`inline-flex items-center rounded-full border px-3 py-0.5 text-xs font-semibold ${badge.colorClass}`}
+                            <span>{name.replace(/  2$/, '')}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <label className="mb-1 block text-xs text-[var(--text-secondary)]">Menu price ($)</label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[var(--text-tertiary)]">$</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={idealMenuPrice}
+                        onChange={(e) => setIdealMenuPrice(e.target.value)}
+                        placeholder="0"
+                        className="w-28 rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-[var(--text-secondary)]">Store (for actual food cost %)</label>
+                    <select
+                      value={idealStore}
+                      onChange={(e) => setIdealStore(e.target.value)}
+                      className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                    >
+                      <option value="">Select store</option>
+                      {STORE_GRID_IDS.map((id) => (
+                        <option key={id} value={id}>{id} {STORE_NAMES[id] ?? ''}</option>
+                      ))}
+                    </select>
+                    {idealCubeLoading && idealStore && (
+                      <span className="ml-2 text-xs text-[var(--text-tertiary)]">Loading…</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
+                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Ideal cost breakdown</div>
+                  <dl className="space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <dt className="text-[var(--text-secondary)]">Base (dough, sauce, cheese, box)</dt>
+                      <dd className="font-mono font-medium">{formatCurrency(idealCostResult.baseCost)}</dd>
+                    </div>
+                    {idealCostResult.toppingLines.map((line) => (
+                      <div key={line.name} className="flex justify-between">
+                        <dt className="text-[var(--text-secondary)]">{line.name}</dt>
+                        <dd className="font-mono">{formatCurrency(line.cost)}</dd>
+                      </div>
+                    ))}
+                    <div className="mt-2 flex justify-between border-t border-[var(--border-subtle)] pt-2">
+                      <dt className="font-semibold text-[var(--text-primary)]">Total ideal food cost</dt>
+                      <dd className="font-mono font-bold">{formatCurrency(idealCostResult.totalCost)}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt className="text-[var(--text-secondary)]">Ideal food cost %</dt>
+                      <dd className="font-mono font-medium">{formatPercent(idealCostResult.idealPct)}</dd>
+                    </div>
+                  </dl>
+                </div>
+                {idealStore && (
+                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
+                    <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Variance analysis</div>
+                    <dl className="space-y-1.5 text-sm">
+                      <div className="flex justify-between">
+                        <dt className="text-[var(--text-secondary)]">Actual food cost % (cube)</dt>
+                        <dd className="font-mono font-medium" style={{ color: idealCubeFoodPct != null && idealCubeFoodPct > 28 ? 'var(--danger-text)' : 'var(--success-text)' }}>
+                          {idealCubeFoodPct != null ? formatPercent(idealCubeFoodPct) : '—'}
+                        </dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-[var(--text-secondary)]">Ideal food cost %</dt>
+                        <dd className="font-mono">{formatPercent(idealCostResult.idealPct)}</dd>
+                      </div>
+                      {idealCubeFoodPct != null && (
+                        <>
+                          <div className="flex justify-between">
+                            <dt className="text-[var(--text-secondary)]">Variance</dt>
+                            <dd
+                              className="font-mono font-medium"
+                              style={{
+                                color:
+                                  idealCubeFoodPct - idealCostResult.idealPct > 5
+                                    ? 'var(--danger-text)'
+                                    : idealCubeFoodPct - idealCostResult.idealPct > 2
+                                      ? 'var(--warning-text, #f97316)'
+                                      : 'var(--success-text)',
+                              }}
                             >
-                              {badge.label}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-[var(--text-tertiary)]">Enter customer total</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                              {(idealCubeFoodPct - idealCostResult.idealPct) >= 0 ? '+' : ''}
+                              {(idealCubeFoodPct - idealCostResult.idealPct).toFixed(1)}%
+                            </dd>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2 border-t border-[var(--border-subtle)] pt-2">
+                            {idealCubeFoodPct - idealCostResult.idealPct > 5 ? (
+                              <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs font-semibold text-red-400">Investigate</span>
+                            ) : idealCubeFoodPct - idealCostResult.idealPct > 2 ? (
+                              <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-semibold text-amber-400">Monitor</span>
+                            ) : (
+                              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-400">On Target</span>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </dl>
+                    <p className="mt-3 text-[11px] italic text-[var(--text-tertiary)]">
+                      Positive variance = potential waste, portioning, or theft
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         </div>
