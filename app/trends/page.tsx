@@ -13,6 +13,8 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts'
+import type { ReportPoint } from '@/lib/comparison'
+import ComparisonPanel from '@/components/ComparisonPanel'
 
 const STORE_LIST = ['2081', '2021', '2259', '2292', '2481', '3011']
 const STORE_COLORS: Record<string, string> = {
@@ -25,12 +27,12 @@ const STORE_COLORS: Record<string, string> = {
 }
 
 const METRICS = [
-  { key: 'net_sales', label: 'Net Sales', fmt: (v: number) => `$${v?.toLocaleString()}` },
-  { key: 'labor_pct', label: 'Labor %', fmt: (v: number) => `${v}%` },
-  { key: 'food_cost_pct', label: 'Food Cost %', fmt: (v: number) => `${v}%` },
-  { key: 'flm_pct', label: 'FLM %', fmt: (v: number) => `${v}%` },
-  { key: 'doordash_sales', label: 'DoorDash (DDD)', fmt: (v: number) => `$${v?.toLocaleString()}`, tooltip: 'DoorDash marketplace + DDDCash orders from cube [DDD Net Sales USD]' },
-  { key: 'ubereats_sales', label: 'Aggregator (DD+UE+GH)', fmt: (v: number) => `$${v?.toLocaleString()}`, tooltip: 'Combined DoorDash + UberEats + GrubHub from cube [TY Aggregator Delivery Net Sales USD]. May differ slightly from POS due to timing.' },
+  { key: 'net_sales', label: 'Net Sales', fmt: (v: number) => `$${v?.toLocaleString()}`, color: '#3b82f6', unit: '$' as const },
+  { key: 'labor_pct', label: 'Labor %', fmt: (v: number) => `${v}%`, color: '#f59e0b', unit: '%' as const },
+  { key: 'food_cost_pct', label: 'Food Cost %', fmt: (v: number) => `${v}%`, color: '#8b5cf6', unit: '%' as const },
+  { key: 'flm_pct', label: 'FLM %', fmt: (v: number) => `${v}%`, color: '#ec4899', unit: '%' as const },
+  { key: 'doordash_sales', label: 'DoorDash (DDD)', fmt: (v: number) => `$${v?.toLocaleString()}`, color: '#f97316', unit: '$' as const, tooltip: 'DoorDash marketplace + DDDCash orders from cube [DDD Net Sales USD]' },
+  { key: 'ubereats_sales', label: 'Aggregator (DD+UE+GH)', fmt: (v: number) => `$${v?.toLocaleString()}`, color: '#06b6d4', unit: '$' as const, tooltip: 'Combined DoorDash + UberEats + GrubHub from cube [TY Aggregator Delivery Net Sales USD]. May differ slightly from POS due to timing.' },
 ] as const
 type MetricKey = (typeof METRICS)[number]['key']
 
@@ -427,6 +429,9 @@ export default function TrendsPage() {
   const [period, setPeriod] = useState<'3M' | '6M' | '1Y' | '2Y' | '3Y'>('6M')
   const [chartData, setChartData] = useState<Array<Record<string, number | string>>>([])
   const [loading, setLoading] = useState(false)
+  const [showCompare, setShowCompare] = useState(false)
+  const [compareReports, setCompareReports] = useState<Record<string, ReportPoint[]>>({})
+  const [compareReportsLoading, setCompareReportsLoading] = useState(false)
   const [specials, setSpecials] = useState<Special[]>([])
   const [specialsFilter, setSpecialsFilter] = useState<'active' | 'history' | 'all'>('active')
   const [addSpecialOpen, setAddSpecialOpen] = useState(false)
@@ -494,6 +499,59 @@ export default function TrendsPage() {
     loadChart()
   }, [loadChart])
 
+  // When Compare is on, fetch daily reports for ComparisonPanel
+  useEffect(() => {
+    if (!showCompare || storesSelected.length === 0) {
+      setCompareReports({})
+      return
+    }
+    setCompareReportsLoading(true)
+    fetch(`/api/daily-reports?days=90`, { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((raw: Array<{
+        report_date: string
+        net_sales?: number | null
+        labor_pct?: number | null
+        food_cost_pct?: number | null
+        flm_pct?: number | null
+        cash_short?: number | null
+        doordash_sales?: number | null
+        ubereats_sales?: number | null
+        stores?: { store_number?: string | number; number?: string } | null
+        store_id?: string
+      }>) => {
+        const byStore: Record<string, ReportPoint[]> = {}
+        const storeNumKey = (r: (typeof raw)[0]) => {
+          const s = r.stores
+          if (s && (s.store_number != null || (s as { number?: string }).number != null))
+            return String((s as { store_number?: string | number }).store_number ?? (s as { number?: string }).number)
+          return r.store_id ? String(r.store_id) : ''
+        }
+        raw.forEach((r) => {
+          const num = storeNumKey(r)
+          if (!num) return
+          if (!byStore[num]) byStore[num] = []
+          byStore[num].push({
+            label: r.report_date,
+            report_date: r.report_date,
+            net_sales: r.net_sales ?? 0,
+            labor_pct: r.labor_pct ?? 0,
+            food_cost_pct: r.food_cost_pct ?? 0,
+            flm_pct: r.flm_pct ?? 0,
+            cash_short: r.cash_short ?? 0,
+            doordash_sales: r.doordash_sales ?? 0,
+            ubereats_sales: r.ubereats_sales ?? 0,
+          })
+        })
+        Object.keys(byStore).forEach((k) => {
+          byStore[k].sort((a, b) => (a.report_date > b.report_date ? 1 : -1))
+        })
+        setCompareReports(byStore)
+      })
+      .catch(() => setCompareReports({}))
+      .finally(() => setCompareReportsLoading(false))
+  }, [showCompare, storesSelected.length])
+
   const activeSpecials = specials.filter((s) => s.status === 'active')
   const activeCount = activeSpecials.length
 
@@ -540,7 +598,7 @@ export default function TrendsPage() {
               href="/ai"
               className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
-              ✨ AI
+              ✦ AI
             </Link>
             <Link
               href="/dashboard"
@@ -561,7 +619,26 @@ export default function TrendsPage() {
       <main className="mx-auto max-w-[1400px] px-6 py-8">
         {/* Section 1 — Trends Chart */}
         <section className="mb-12">
-          <h2 className="mb-4 text-lg font-bold text-[var(--text-primary)]">Trends Chart</h2>
+          <div className="mb-4 flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setShowCompare((p) => !p)}
+              style={{
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 6,
+                padding: '6px 14px',
+                fontSize: 12,
+                fontWeight: 600,
+                background: showCompare ? 'var(--brand)' : 'transparent',
+                color: showCompare ? '#fff' : 'var(--text-tertiary)',
+                fontFamily: "'Inter', sans-serif",
+                cursor: 'pointer',
+              }}
+            >
+              ⇄ Compare
+            </button>
+            <h2 className="text-lg font-bold text-[var(--text-primary)]">Trends Chart</h2>
+          </div>
           <div className="mb-4 flex flex-wrap items-end gap-6">
             <div>
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
@@ -865,6 +942,29 @@ export default function TrendsPage() {
               </div>
             )
           })()}
+
+          {/* ComparisonPanel — below chart and store performance when Compare is on */}
+          {showCompare && (
+            <div className="mt-8">
+              {compareReportsLoading ? (
+                <div className="flex h-[280px] items-center justify-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-tertiary)]">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--border-default)] border-t-[var(--brand)]" />
+                  Loading compare data…
+                </div>
+              ) : (
+                <ComparisonPanel
+                  selectedStores={storesSelected}
+                  activeMetric={metric}
+                  reports={compareReports}
+                  stores={STORE_LIST.map((num) => ({ id: num, number: num, name: `Store ${num}`, location: num }))}
+                  metrics={METRICS.map((m) => ({ key: m.key, label: m.label, fmt: m.fmt, color: m.color, unit: m.unit }))}
+                  storeColors={STORE_LIST.map((n) => STORE_COLORS[n] ?? '#888')}
+                  targets={{ labor_pct: 28.68, food_cost_pct: 26.42, flm_pct: 55.11 }}
+                  onMetricSelect={(key) => setMetric(key as MetricKey)}
+                />
+              )}
+            </div>
+          )}
         </section>
 
         {/* Section 2 — Specials Tracker */}

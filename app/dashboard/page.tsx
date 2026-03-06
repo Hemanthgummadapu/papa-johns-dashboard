@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -21,6 +21,12 @@ import {
 import type { DailyReportWithStore } from '@/lib/db'
 import ComparisonPanel from '@/components/ComparisonPanel'
 import SingleStoreDateCompare from '@/components/SingleStoreDateCompare'
+import AuditUpload from '@/components/audit/AuditUpload'
+import AuditSummaryTable from '@/components/audit/AuditSummaryTable'
+import AuditDetailsTable from '@/components/audit/AuditDetailsTable'
+import FraudFlags from '@/components/audit/FraudFlags'
+import AuditSummaryComparisonTable from '@/components/audit/AuditSummaryComparisonTable'
+import { ProfitabilityContent } from '@/app/analytics/profitability/page'
 import YearOverYearUploadPanel from '@/components/YearOverYearUploadPanel'
 import YearOverYearPanel from '@/components/YearOverYearPanel'
 import SMGDashboardEmbed from '@/components/SMGDashboardEmbed'
@@ -591,16 +597,18 @@ function KpiCard({
   const cardBaseStyle: React.CSSProperties = {
     background: 'var(--bg-surface)',
     border: '1px solid var(--border-subtle)',
-    borderRadius: 12,
-    padding: 20,
-    paddingBottom: 28,
+    borderRadius: 10,
+    padding: 14,
+    paddingBottom: 14,
     position: 'relative',
     overflow: 'visible',
-    height: '100%',
+    height: 'auto',
+    minHeight: 'unset',
     display: 'flex',
     flexDirection: 'column',
     boxSizing: 'border-box',
   }
+  const cardBaseStylePadded: React.CSSProperties = { ...cardBaseStyle, padding: 14, paddingBottom: 14 }
 
   const topBarStyle: React.CSSProperties = {
     position: 'absolute',
@@ -626,7 +634,7 @@ function KpiCard({
   const fmtNum = (v: number | null | undefined) => v != null ? v.toLocaleString() : 'N/A'
 
   const backContent = cubeStore && (
-    <div style={cardBaseStyle} onClick={() => canFlip && setIsFlipped(false)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setIsFlipped(false) } }} aria-label="Flip card back">
+    <div style={cardBaseStylePadded} onClick={() => canFlip && setIsFlipped(false)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setIsFlipped(false) } }} aria-label="Flip card back">
       <div style={topBarStyle} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
         <div>
@@ -710,25 +718,47 @@ function KpiCard({
 
   if (!latest) return null
 
+  const netSalesVal = cubeStore?.netSales ?? latest?.net_sales ?? 0
+  const laborPctVal = cubeStore != null ? (cubeStore.totalLaborPct ?? cubeStore.laborPct) : (latest?.labor_pct ?? 0)
+  const foodCostUsdVal = cubeStore != null ? (cubeStore.actualFoodCostUsd ?? cubeStore.foodCostUsd) : (latest as any)?.food_cost_usd
+  const foodCostPctVal = cubeStore != null ? (cubeStore.actualFoodPct ?? (cubeStore.netSales && cubeStore.foodCostUsd ? (cubeStore.foodCostUsd / cubeStore.netSales) * 100 : null)) : (latest?.food_cost_pct ?? 0)
+  const flmPctVal = cubeStore?.flmPct ?? (latest?.flm_pct ?? 0)
+  const dddVal = cubeStore?.dddSales ?? (latest as any)?.doordash_sales ?? 0
+  const aggregatorVal = cubeStore?.aggregatorSales ?? (latest as any)?.ubereats_sales ?? 0
+  const compPct = (latest as any)?.comp_pct
+  const laborTarget = TARGETS.labor_pct ?? 28.68
+  const flmTarget = TARGETS.flm_pct ?? 55.11
+  const laborGood = laborPctVal != null && laborPctVal <= laborTarget
+  const flmGood = flmPctVal != null && flmPctVal < flmTarget
+  const foodGood = foodCostPctVal != null && (TARGETS.food_cost_pct == null || foodCostPctVal <= TARGETS.food_cost_pct)
+
   const frontContent = (
     <div style={cardBaseStyle}>
       <div style={topBarStyle} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
         <div>
-          <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', lineHeight: 1.2 }}>
             {store.name}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
-            {store.location}
-            {!showLyBanner && (latest as any).comp_pct != null && (
-              <span style={{ marginLeft: 8, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: (latest as any).comp_pct >= 0 ? 'var(--success-text)' : 'var(--danger-text)' }}>
-                Comp: {(latest as any).comp_pct >= 0 ? '+' : ''}{(latest as any).comp_pct}%
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>{store.location}</span>
+            {!showLyBanner && compPct != null && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: compPct >= 0 ? 'var(--success-subtle)' : 'var(--danger-subtle)',
+                  color: compPct >= 0 ? 'var(--success-text)' : 'var(--danger-text)',
+                  fontFamily: "'JetBrains Mono', monospace",
+                }}
+              >
+                Comp {compPct >= 0 ? '+' : ''}{compPct}%
               </span>
             )}
             {showLyBanner && (
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>
-                Showing LY: {showLyBanner}
-              </div>
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500 }}>Showing LY: {showLyBanner}</span>
             )}
           </div>
         </div>
@@ -740,213 +770,75 @@ function KpiCard({
               style={{
                 fontSize: 11,
                 fontFamily: "'Inter', sans-serif",
-                fontWeight: 500,
-                color: 'var(--text-secondary)',
-                background: 'var(--bg-overlay)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 6,
-                padding: '6px 10px',
+                fontWeight: 600,
+                color: 'var(--text-tertiary)',
+                background: 'transparent',
+                border: '1px solid var(--border-default)',
+                borderRadius: 5,
+                padding: '3px 9px',
                 cursor: 'pointer',
               }}
             >
-              View details
+              View →
             </button>
           )}
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 6,
-              background: 'var(--bg-overlay)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 11,
-              fontFamily: "'JetBrains Mono', monospace",
-              color: storeColor,
-              fontWeight: 500,
-            }}
-          >
+          <div style={{ width: 24, height: 24, borderRadius: 5, background: `${storeColor}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: storeColor, fontWeight: 500 }}>
             {store.number.slice(-2)}
           </div>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        {METRICS.map((m) => {
-          const isFoodCost = m.key === 'food_cost_pct'
-          const val = isFoodCost && (latest as any).food_cost_usd != null
-            ? safeNum((latest as any).food_cost_usd)
-            : safeNum((latest as any)[m.key])
-          const displayVal = isFoodCost && (latest as any).food_cost_usd != null
-            ? `$${val?.toLocaleString()}`
-            : m.fmt(val)
-          const good = isGood(m.key, isFoodCost ? safeNum((latest as any).food_cost_pct) : val)
-          const label = isFoodCost && (latest as any).food_cost_usd != null ? 'FOOD COST' : m.label.toUpperCase()
-          return (
-            <div key={m.key} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                <span>{label}</span>
-                {m.subtitle && (
-                  <span style={{ fontSize: 10, letterSpacing: '0.02em', opacity: 0.9 }}>{m.subtitle}</span>
-                )}
-                {m.tooltip && (
-                  <span style={{ cursor: 'help', opacity: 0.85 }} title={m.tooltip} aria-label="Info">ℹ</span>
-                )}
-              </div>
-              <div
-                style={{
-                  fontSize: 22,
-                  fontWeight: 600,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  color: good ? 'var(--success-text)' : 'var(--danger-text)',
-                }}
-              >
-                {displayVal}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Tableau section: Labor %, Food %, BOZOCORO %, OSAT %, Avg OTD Time */}
-      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
-        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 8 }}>TABLEAU</div>
-        {tableauLoading ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} style={{ height: 36, background: 'var(--bg-overlay)', borderRadius: 6, opacity: 0.7 }} />
-            ))}
+      {/* 2 rows × 3 cols — compact metric grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Net Sales</div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(netSalesVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{compPct != null ? (compPct >= 0 ? '↑' : '↓') + ' vs prev period' : '—'}</div>
+        </div>
+        <div style={{ background: laborGood ? 'var(--bg-base)' : 'var(--danger-subtle)', borderRadius: 7, padding: '8px 10px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: laborGood ? 'var(--text-tertiary)' : 'var(--danger-text)', marginBottom: 4 }}>Labor %</div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: laborGood ? 'var(--success-text)' : 'var(--danger-text)', lineHeight: 1.1 }}>{laborPctVal != null ? `${Number(laborPctVal).toFixed(1)}%` : '—'}</div>
+          <div style={{ fontSize: 10.5, color: laborGood ? 'var(--success-text)' : 'var(--danger-text)', marginTop: 2 }}>{laborGood ? `Target: ${laborTarget}%` : '↑ Over target'}</div>
+        </div>
+        <div style={{ background: flmGood ? 'var(--bg-base)' : 'var(--danger-subtle)', borderRadius: 7, padding: '8px 10px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: flmGood ? 'var(--text-tertiary)' : 'var(--danger-text)', marginBottom: 4 }}>FLM %</div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: flmGood ? 'var(--success-text)' : 'var(--danger-text)', lineHeight: 1.1 }}>{flmPctVal != null ? `${Number(flmPctVal).toFixed(1)}%` : '—'}</div>
+          <div style={{ fontSize: 10.5, color: flmGood ? 'var(--success-text)' : 'var(--danger-text)', marginTop: 2 }}>Target: &lt;{flmTarget}%</div>
+        </div>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Food Cost</div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: foodGood ? 'var(--text-primary)' : 'var(--danger-text)', lineHeight: 1.1 }}>
+            {foodCostUsdVal != null ? `$${Number(foodCostUsdVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : foodCostPctVal != null ? `${Number(foodCostPctVal).toFixed(1)}%` : '—'}
           </div>
-        ) : tableauLeadership ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-            {[
-              { label: 'Labor %', val: tableauLeadership.labor_pct, redAbove: 28, yellowAbove: 25 },
-              { label: 'Food %', val: tableauLeadership.food_pct, redAbove: 35, yellowAbove: 30 },
-              { label: 'BOZOCORO %', val: tableauLeadership.bozocoro_pct, redAbove: null, yellowAbove: null },
-              { label: 'OSAT %', val: tableauLeadership.osat_pct, redAbove: null, yellowAbove: null },
-              { label: 'Avg OTD', val: tableauLeadership.avg_otd_time, redAbove: null, yellowAbove: null },
-            ].map(({ label, val, redAbove, yellowAbove }) => {
-              const num = typeof val === 'number' ? val : parseFloat(String(val ?? ''))
-              const isNum = !Number.isNaN(num)
-              let color = 'var(--text-primary)'
-              if (redAbove != null && isNum) color = num > redAbove ? 'var(--danger-text)' : num > (yellowAbove ?? 0) ? 'var(--warning-text)' : 'var(--success-text)'
-              return (
-                <div key={label} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '8px 10px' }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color }}>{isNum ? (label === 'Avg OTD' ? `${num}` : `${num}%`) : '—'}</div>
-                </div>
-              )
-            })}
+          <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{foodCostPctVal != null ? `${Number(foodCostPctVal).toFixed(1)}%` : '—'}</div>
+        </div>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Aggregator</div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+            ${Number(cubeStore ? (aggregatorVal ?? 0) : (Number(dddVal) + Number(aggregatorVal))).toLocaleString('en-US', { maximumFractionDigits: 0 })}
           </div>
-        ) : (
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No Tableau data</div>
-        )}
-      </div>
-
-      {/* BoZoCoRo Detail expandable */}
-      <div style={{ marginTop: 12 }}>
-        <button
-          type="button"
-          onClick={() => setBozocoroExpanded((e) => !e)}
-          style={{
-            width: '100%',
-            padding: '8px 12px',
-            background: 'var(--bg-overlay)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 8,
-            color: 'var(--text-secondary)',
-            fontSize: 12,
-            fontFamily: "'Inter', sans-serif",
-            fontWeight: 500,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <span>BoZoCoRo Detail</span>
-          <span style={{ opacity: 0.8 }}>{bozocoroExpanded ? '▼' : '▶'}</span>
-        </button>
-        {bozocoroExpanded && (
-          <div style={{ marginTop: 8, background: 'var(--bg-base)', borderRadius: 8, border: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-subtle)' }}>
-              {(['zeroed', 'bad', 'cancelled', 'refunds'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setBozocoroTab(tab)}
-                  style={{
-                    flex: 1,
-                    padding: '8px 6px',
-                    fontSize: 10,
-                    fontWeight: 600,
-                    fontFamily: "'Inter', sans-serif",
-                    background: bozocoroTab === tab ? 'var(--bg-overlay)' : 'transparent',
-                    color: bozocoroTab === tab ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                    border: 'none',
-                    cursor: 'pointer',
-                    textTransform: 'capitalize',
-                  }}
-                >
-                  {tab === 'zeroed' ? 'Zeroed' : tab === 'bad' ? 'Bad' : tab === 'cancelled' ? 'Cancelled' : 'Refunds'}
-                </button>
-              ))}
-            </div>
-            <div style={{ padding: 10, maxHeight: 220, overflow: 'auto' }}>
-              {tableauBozocoro ? (() => {
-                const key = bozocoroTab === 'zeroed' ? 'zeroed_out' : bozocoroTab === 'bad' ? 'bad_orders' : bozocoroTab === 'cancelled' ? 'cancelled' : 'refunds'
-                const block = (tableauBozocoro as any)[key] as { summary: { count: number; total_value: number }; details: TableauBozocoroDetail[] } | undefined
-                if (!block?.details?.length) return <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No rows</div>
-                const byEmployee = block.details.reduce((acc, row) => {
-                  const name = (row.employee ?? 'Unknown').trim() || 'Unknown'
-                  if (!acc[name]) acc[name] = { count: 0, amount: 0 }
-                  acc[name].count += 1
-                  acc[name].amount += Number(row.amount) || 0
-                  return acc
-                }, {} as Record<string, { count: number; amount: number }>)
-                const rows = Object.entries(byEmployee).sort((a, b) => b[1].amount - a[1].amount)
-                return (
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, fontFamily: "'Inter', sans-serif" }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                        <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 600 }}>Employee</th>
-                        <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 600 }}>Orders</th>
-                        <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-tertiary)', fontWeight: 600 }}>Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map(([name, { count, amount }]) => (
-                        <tr key={name} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                          <td style={{ padding: '6px 8px', color: 'var(--text-primary)' }}>{name}</td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)' }}>{count}</td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>${amount.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )
-              })() : (
-                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>No BoZoCoRo data</div>
-              )}
-            </div>
-          </div>
-        )}
+          <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>DD + UE + GH</div>
+        </div>
+        <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>DoorDash</div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(dddVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>—</div>
+        </div>
       </div>
     </div>
   )
 
   if (!canFlip) {
-    return <div style={{ minHeight: 0 }}>{frontContent}</div>
+    return <div style={{ height: 'auto' }}>{frontContent}</div>
   }
 
   return (
-    <div style={{ perspective: 1000, minHeight: 420 }}>
+    <div style={{ perspective: 1000, height: 'auto', minHeight: 'unset' }}>
       <div
         style={{
           position: 'relative',
-          height: '100%',
-          minHeight: 420,
+          height: 'auto',
+          minHeight: 'unset',
           transformStyle: 'preserve-3d',
           transition: 'transform 0.4s ease',
           transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
@@ -954,8 +846,6 @@ function KpiCard({
       >
         <div
           style={{
-            position: 'absolute',
-            inset: 0,
             backfaceVisibility: 'hidden',
             WebkitBackfaceVisibility: 'hidden',
           }}
@@ -966,6 +856,7 @@ function KpiCard({
           style={{
             position: 'absolute',
             inset: 0,
+            minHeight: '100%',
             backfaceVisibility: 'hidden',
             WebkitBackfaceVisibility: 'hidden',
             transform: 'rotateY(180deg)',
@@ -1448,7 +1339,7 @@ export default function DashboardPage() {
 
   const [activeMetric, setActiveMetric] = useState<MetricKey | null>(null) // null = full report
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly') // weekly | monthly
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'trends' | 'upload' | 'yoy' | 'automation' | 'labor' | 'forecast' | 'profit' | 'live' | 'guest-experience'>('dashboard') // dashboard | trends | upload | yoy | automation | labor | forecast | profit | live | guest-experience
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'trends' | 'operations' | 'analytics' | 'forecast' | 'live' | 'guest'>('dashboard')
   const [compareMode, setCompareMode] = useState(false) // compare mode toggle
   const [trendsPeriod, setTrendsPeriod] = useState<'3M' | '6M' | '1Y' | '2Y' | '3Y'>('6M')
   const [trendsMetricKey, setTrendsMetricKey] = useState<MetricKey>('net_sales')
@@ -1522,7 +1413,7 @@ export default function DashboardPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [liveError, setLiveError] = useState<string | null>(null)
   const [liveLastUpdated, setLiveLastUpdated] = useState<Date | null>(null)
-  const [refreshCountdown, setRefreshCountdown] = useState(0)
+  const [refreshCountdown, setRefreshCountdown] = useState(15 * 60)
   const [liveStalenessTick, setLiveStalenessTick] = useState(0)
   const [selectedStore, setSelectedStore] = useState<any>(null)
   const [showStoreModal, setShowStoreModal] = useState(false)
@@ -1554,6 +1445,10 @@ export default function DashboardPage() {
   const [laborLoading, setLaborLoading] = useState(false)
   const [laborError, setLaborError] = useState<string | null>(null)
   const [laborSelectedWeek, setLaborSelectedWeek] = useState<string>('')
+  const [auditPeriod, setAuditPeriod] = useState<'current_period' | 'last_period' | 'last_year'>('current_period')
+  const [auditTab, setAuditTab] = useState<'summary' | 'details' | 'fraud'>('summary')
+  const [auditRefreshKey, setAuditRefreshKey] = useState(0)
+  const [auditDetailsFilter, setAuditDetailsFilter] = useState<{ store?: string; manager?: string }>({})
   const [laborTrendStore, setLaborTrendStore] = useState<string | null>(null)
   const [laborPctByStore, setLaborPctByStore] = useState<Record<string, number | null>>({})
   const [laborCubeLoading, setLaborCubeLoading] = useState(false)
@@ -1745,7 +1640,7 @@ export default function DashboardPage() {
   }, [tableauDate, selectedStores.join(','), stores.length])
 
   // Fetch live data from Supabase via /api/live-data (no scrape, no API key needed)
-  const fetchLiveData = async () => {
+  const fetchLiveData = useCallback(async () => {
     // Only show loading spinner on first load (when no data exists)
     const isFirstLoad = liveData.length === 0
     if (isFirstLoad) {
@@ -1780,7 +1675,7 @@ export default function DashboardPage() {
         setLiveLoading(false)
       }
     }
-  }
+  }, [liveLastUpdated])
 
   // Trigger live scrape and refresh data
   const triggerLiveScrape = async () => {
@@ -1820,6 +1715,8 @@ export default function DashboardPage() {
   useEffect(() => {
     if (activeTab !== 'live') return
 
+    void fetchLiveData()
+
     const countdownInterval = setInterval(() => {
       setRefreshCountdown((prev) => {
         const next = prev - 1
@@ -1832,7 +1729,7 @@ export default function DashboardPage() {
     }, 1000)
 
     return () => clearInterval(countdownInterval)
-  }, [activeTab])
+  }, [activeTab, fetchLiveData])
 
   // Staleness tick - updates every minute so "last scraped X mins ago" stays current
   useEffect(() => {
@@ -1843,7 +1740,7 @@ export default function DashboardPage() {
 
   // HotSchedules Labor: fetch when Labor tab is active
   useEffect(() => {
-    if (activeTab !== 'labor') return
+    if (activeTab !== 'operations') return
     let cancelled = false
     setLaborError(null)
     setLaborLoading(true)
@@ -1877,7 +1774,7 @@ export default function DashboardPage() {
 
   // Labor tab: fetch cube labor % for selected week (period=weekly, date=year-Wweek)
   useEffect(() => {
-    if (activeTab !== 'labor' || laborData.length === 0) return
+    if (activeTab !== 'operations' || laborData.length === 0) return
     const weeksWithActuals = Array.from(new Set(laborData.filter((r) => (r.total_actual_hours ?? 0) > 0).map((r) => r.week))).sort((a, b) => {
       const aRow = laborData.find((r) => r.week === a)
       const bRow = laborData.find((r) => r.week === b)
@@ -1972,7 +1869,7 @@ export default function DashboardPage() {
 
   // Profit tab: fetch cube monthly for each period in range, extract selected store
   useEffect(() => {
-    if (activeTab !== 'profit') return
+    if (activeTab !== 'analytics') return
     const now = new Date()
     const currentYear = now.getFullYear()
     const currentPeriod = now.getMonth() + 1 // 1-12 = P1-P12
@@ -2243,6 +2140,78 @@ export default function DashboardPage() {
 
   const selectedStoresSafe = selectedStores.filter((n) => stores.some((s) => s.number === n))
 
+  // KPI summary row for dashboard (group totals / averages for selected stores)
+  const kpiSummary = useMemo(() => {
+    const selected = selectedStoresSafe
+    if (selected.length === 0) return null
+    if (dataSource === 'cube' && cubeData?.length) {
+      const rows = selected.map((num) => cubeData.find((s) => String(s.storeNumber) === num)).filter(Boolean) as CubeStoreRow[]
+      if (rows.length === 0) return null
+      const totalNetSales = rows.reduce((s, r) => s + (r.netSales ?? 0), 0)
+      const totalLy = rows.reduce((s, r) => s + (r.lyNetSales ?? 0), 0)
+      const compPct = totalLy && totalNetSales ? ((totalNetSales - totalLy) / totalLy) * 100 : null
+      const laborPcts = rows.map((r) => r.totalLaborPct ?? r.laborPct).filter((v): v is number => v != null)
+      const avgLabor = laborPcts.length ? laborPcts.reduce((a, b) => a + b, 0) / laborPcts.length : null
+      const foodCostPcts = rows.filter((r) => r.netSales && (r.actualFoodPct != null || (r.foodCostUsd != null))).map((r) => r.actualFoodPct ?? (r.netSales && r.foodCostUsd ? (r.foodCostUsd / r.netSales) * 100 : 0))
+      const avgFood = foodCostPcts.length ? foodCostPcts.reduce((a, b) => a + b, 0) / foodCostPcts.length : null
+      const flmPcts = rows.map((r) => r.flmPct).filter((v): v is number => v != null)
+      const avgFlm = flmPcts.length ? flmPcts.reduce((a, b) => a + b, 0) / flmPcts.length : null
+      const totalOrders = rows.reduce((s, r) => s + (r.totalOrders ?? 0), 0)
+      return {
+        totalNetSales,
+        totalLy,
+        compPct,
+        avgLaborPct: avgLabor,
+        avgFoodCostPct: avgFood,
+        avgFlmPct: avgFlm,
+        totalOrders,
+        avgSmgScore: null as number | null,
+      }
+    }
+    const reportRows = selected.flatMap((num) => reports[num] || [])
+    if (reportRows.length === 0) return null
+    const latestByStore = selected.map((num) => reports[num]?.[reports[num].length - 1]).filter(Boolean) as ReportPoint[]
+    if (latestByStore.length === 0) return null
+    const totalNetSales = latestByStore.reduce((s, r) => s + (r.net_sales ?? 0), 0)
+    const avgLabor = latestByStore.reduce((s, r) => s + (r.labor_pct ?? 0), 0) / latestByStore.length
+    const avgFood = latestByStore.reduce((s, r) => s + (r.food_cost_pct ?? 0), 0) / latestByStore.length
+    const avgFlm = latestByStore.reduce((s, r) => s + (r.flm_pct ?? 0), 0) / latestByStore.length
+    return {
+      totalNetSales,
+      totalLy: null,
+      compPct: null,
+      avgLaborPct: avgLabor,
+      avgFoodCostPct: avgFood,
+      avgFlmPct: avgFlm,
+      totalOrders: null,
+      avgSmgScore: null,
+    }
+  }, [dataSource, cubeData, selectedStoresSafe, reports])
+
+  // Weekly sales trend for bottom charts row — group reports by week, last 6 weeks
+  const weeklyTrendData = useMemo(() => {
+    const getWeekKey = (dateStr: string) => {
+      const d = new Date(dateStr)
+      const day = d.getDay()
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+      const monday = new Date(d)
+      monday.setDate(diff)
+      return monday.toISOString().slice(0, 10)
+    }
+    const byWeek: Record<string, number> = {}
+    selectedStoresSafe.forEach((storeNum) => {
+      const pts = reports[storeNum] ?? []
+      pts.forEach((r) => {
+        const weekKey = getWeekKey(r.report_date)
+        byWeek[weekKey] = (byWeek[weekKey] || 0) + (r.net_sales ?? 0)
+      })
+    })
+    return Object.entries(byWeek)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-6)
+      .map(([label, total]) => ({ label: label.slice(0, 10), total }))
+  }, [reports, selectedStoresSafe])
+
   // Trends tab: default to all stores selected on entry
   useEffect(() => {
     if (activeTab === 'trends' && trendsStoresSelected.length === 0 && stores.length > 0) {
@@ -2371,51 +2340,51 @@ export default function DashboardPage() {
           ⚠️ Microsoft session expired — extranet login required. Click here to re-authenticate.
         </div>
       )}
-      {/* Header */}
-      <div style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)', padding: '0 32px' }}>
-        <div style={{ maxWidth: 1400, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      {/* Header — 56px height, compact tabs per mockup */}
+      <div style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)', padding: '0 28px' }}>
+        <div style={{ maxWidth: 1440, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
             <div
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: 6,
+                width: 30,
+                height: 30,
+                borderRadius: 7,
                 background: 'var(--brand)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontFamily: "'Inter', sans-serif",
-                fontSize: 12,
-                fontWeight: 600,
+                fontSize: 11,
+                fontWeight: 700,
                 color: '#fff',
-                letterSpacing: '0.04em',
+                letterSpacing: '0.03em',
               }}
             >
               PJ
             </div>
             <div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 16, color: 'var(--text-primary)' }}>Papa Johns Ops</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>Papa Johns Ops</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400, marginTop: -2 }}>
                 {stores.length} store{stores.length === 1 ? '' : 's'} · Reporting
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
             <button
               onClick={() => setActiveTab('dashboard')}
               className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
               style={{
-                padding: '8px 16px',
-                borderRadius: 8,
+                padding: '6px 13px',
+                borderRadius: 6,
                 border: 'none',
                 cursor: 'pointer',
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 13,
-                fontWeight: 600,
-                letterSpacing: '0.04em',
+                fontWeight: activeTab === 'dashboard' ? 600 : 500,
                 background: activeTab === 'dashboard' ? 'var(--brand)' : 'transparent',
                 color: activeTab === 'dashboard' ? '#fff' : 'var(--text-tertiary)',
+                transition: 'color 0.15s, background 0.15s',
               }}
             >
               Dashboard
@@ -2423,127 +2392,141 @@ export default function DashboardPage() {
             <Link
               href="/trends"
               style={{
-                padding: '8px 16px',
-                borderRadius: 8,
+                padding: '6px 13px',
+                borderRadius: 6,
                 fontFamily: "'Inter', sans-serif",
                 fontSize: 13,
-                fontWeight: 600,
-                letterSpacing: '0.04em',
+                fontWeight: 500,
                 background: 'transparent',
                 color: 'var(--text-tertiary)',
                 textDecoration: 'none',
+                transition: 'color 0.15s, background 0.15s',
               }}
               className="tab-btn"
             >
               Trends
             </Link>
-            <Link
-              href="/analytics/profitability"
-              style={{
-                padding: '8px 16px',
-                borderRadius: 8,
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 13,
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                background: 'transparent',
-                color: 'var(--text-tertiary)',
-                textDecoration: 'none',
-              }}
-              className="tab-btn"
-            >
-              Analytics
-            </Link>
-            <Link
-              href="/audit"
-              style={{
-                padding: '8px 16px',
-                borderRadius: 8,
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 13,
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                background: 'transparent',
-                color: 'var(--text-tertiary)',
-                textDecoration: 'none',
-              }}
-              className="tab-btn"
-            >
-              Audit
-            </Link>
-            <Link
-              href="/ai"
-              style={{
-                padding: '8px 16px',
-                borderRadius: 8,
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 13,
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                background: 'transparent',
-                color: 'var(--text-tertiary)',
-                textDecoration: 'none',
-              }}
-              className="tab-btn"
-            >
-              ✨ AI
-            </Link>
             {[
-              ['labor', 'Labor'],
+              ['operations', 'Operations'],
+              ['analytics', 'Analytics'],
               ['forecast', 'Forecast'],
-              ['profit', 'Profit'],
               ['live', 'Live'],
-              ['guest-experience', 'Guest Experience'],
+              ['guest', 'Guest'],
             ].map(([key, label]) => (
               <button
                 key={key}
-                onClick={() => setActiveTab(key as 'labor' | 'forecast' | 'profit' | 'live' | 'guest-experience')}
+                onClick={() => setActiveTab(key as 'operations' | 'analytics' | 'forecast' | 'live' | 'guest')}
                 className={`tab-btn ${activeTab === key ? 'active' : ''}`}
                 style={{
-                  padding: '8px 16px',
-                  borderRadius: 8,
+                  padding: '6px 13px',
+                  borderRadius: 6,
                   border: 'none',
                   cursor: 'pointer',
                   fontFamily: "'Inter', sans-serif",
                   fontSize: 13,
-                  fontWeight: 600,
-                  letterSpacing: '0.04em',
+                  fontWeight: activeTab === key ? 600 : 500,
                   background: activeTab === key ? 'var(--brand)' : 'transparent',
                   color: activeTab === key ? '#fff' : 'var(--text-tertiary)',
+                  transition: 'color 0.15s, background 0.15s',
                 }}
               >
                 {label}
               </button>
             ))}
+            <Link
+              href="/ai"
+              style={{
+                padding: '6px 13px',
+                borderRadius: 6,
+                fontFamily: "'Inter', sans-serif",
+                fontSize: 13,
+                fontWeight: 500,
+                background: 'transparent',
+                color: 'var(--text-tertiary)',
+                textDecoration: 'none',
+                transition: 'color 0.15s, background 0.15s',
+              }}
+              className="tab-btn"
+            >
+              ✦ AI
+            </Link>
           </div>
 
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'right' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-              {lastUpdated && <span style={{ fontFamily: "'Inter', sans-serif" }}>Last updated: {lastUpdated}</span>}
-              <span
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: 6,
-                  fontSize: 10,
-                  fontWeight: 500,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  background: dataSource === 'cube' && activeCubeDate ? 'var(--success-subtle)' : isRealData ? 'var(--success-subtle)' : 'var(--warning-subtle)',
-                  color: dataSource === 'cube' && activeCubeDate ? 'var(--success-text)' : isRealData ? 'var(--success-text)' : 'var(--warning-text)',
-                }}
-              >
-                {dataSource === 'cube' && activeCubeDate
-                  ? `CUBE DATA · ${formatCubeDateLabel(activeCubeDate, cubePeriod)}`
-                  : dataSource === 'cube'
-                    ? 'LIVE CUBE'
-                    : isRealData
-                      ? 'LIVE DATA'
-                      : 'DEMO DATA'}
-              </span>
-            </div>
-            {dataSource !== 'cube' && dateRange && <div style={{ fontFamily: "'Inter', sans-serif" }}>Range: {formatDateShort(dateRange.start)} – {formatDateShort(dateRange.end)}</div>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-tertiary)' }}>
+              {lastUpdated ? `Updated ${lastUpdated}` : ''}
+            </span>
+            <span
+              style={{
+                padding: '3px 8px',
+                borderRadius: 5,
+                fontSize: 10,
+                fontWeight: 500,
+                fontFamily: "'JetBrains Mono', monospace",
+                letterSpacing: '0.06em',
+                border: '1px solid var(--border-default)',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              {dataSource === 'cube' && activeCubeDate
+                ? `CUBE · ${formatCubeDateLabel(activeCubeDate, cubePeriod)}`
+                : dataSource === 'cube'
+                  ? 'LIVE CUBE'
+                  : isRealData
+                    ? 'LIVE DATA'
+                    : 'DEMO DATA'}
+            </span>
           </div>
         </div>
       </div>
+
+      {/* Alert banner — labor / EBITDA warnings (dashboard tab, when cube data loaded) */}
+      {activeTab === 'dashboard' && (() => {
+        const alerts: { storeName: string; message: string }[] = []
+        const laborTarget = TARGETS.labor_pct ?? 28.68
+        if (dataSource === 'cube' && cubeData?.length) {
+          selectedStoresSafe.forEach((num) => {
+            const store = stores.find((s) => s.number === num)
+            const row = cubeData.find((s) => String(s.storeNumber) === num)
+            if (!store || !row) return
+            const laborPct = row.totalLaborPct ?? row.laborPct ?? null
+            if (laborPct != null && laborPct > laborTarget) {
+              alerts.push({ storeName: `${store.name} ${store.location}`, message: `Labor % at ${laborPct.toFixed(1)}% exceeds target.` })
+            }
+            const ebitda = row.restaurantLevelEbitda
+            if (ebitda != null && ebitda < 0) {
+              alerts.push({ storeName: `${store.name} ${store.location}`, message: `EBITDA negative for current period.` })
+            }
+          })
+        }
+        if (alerts.length === 0) return null
+        return (
+          <div
+            style={{
+              background: 'rgba(239,68,68,0.08)',
+              borderBottom: '1px solid rgba(239,68,68,0.2)',
+              padding: '9px 28px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+              fontSize: 12.5,
+              color: '#fca5a5',
+              fontFamily: "'Inter', sans-serif",
+            }}
+          >
+            <span style={{ fontSize: 14 }}>⚠</span>
+            {alerts.map((a, i) => (
+              <span key={i}>
+                {i > 0 && <span style={{ color: 'var(--text-tertiary)', margin: '0 4px' }}>·</span>}
+                <span style={{ color: 'var(--danger-text)', fontWeight: 600 }}>{a.storeName}</span>
+                {' — '}{a.message}
+              </span>
+            ))}
+          </div>
+        )
+      })()}
 
       {dataSource === 'cube' && cubeOffline && (
         <div
@@ -2588,7 +2571,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '32px' }}>
+      <div style={{ maxWidth: 1440, margin: '0 auto', padding: '20px 28px 40px' }}>
         {loading && (
           <div className="fade-in" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20 }}>
             <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 8, color: 'var(--text-primary)' }}>Loading reports…</div>
@@ -2620,7 +2603,7 @@ export default function DashboardPage() {
         )}
 
         {/* UPLOAD TAB */}
-        {false && !loading && activeTab === 'upload' && (
+        {false && !loading && (
           <div className="fade-in" style={{ maxWidth: 600, margin: '0 auto' }}>
             <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>Upload Reports</div>
             <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 24, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
@@ -2647,9 +2630,10 @@ export default function DashboardPage() {
           </div>
         )} */}
 
-        {/* LABOR TAB (HotSchedules) */}
-        {!loading && activeTab === 'labor' && (
+        {/* OPERATIONS TAB — Labor + Audit */}
+        {!loading && activeTab === 'operations' && (
           <div className="fade-in">
+            {/* Labor section (same as former Labor tab) */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <div>
                 <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>HotSchedules Labor</div>
@@ -2903,6 +2887,93 @@ export default function DashboardPage() {
                   Data is synced from Tableau once daily. Run the scraper job or wait for the next sync.
                 </div>
               </div>
+            )}
+
+            {/* Section divider */}
+            <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '32px 0' }} />
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 16, fontFamily: "'Inter', sans-serif" }}>
+              Audit — Zero, Bad & Canceled Orders
+            </div>
+
+            {/* SECTION 2 — AUDIT */}
+            <div style={{ marginBottom: 20 }}>
+              <AuditUpload
+                selectedTimePeriod={auditPeriod}
+                onUploadComplete={() => {
+                  setAuditRefreshKey((k) => k + 1)
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 0 }}>
+              {[
+                { value: 'current_period' as const, label: 'Current Period' },
+                { value: 'last_period' as const, label: 'Last Period' },
+                { value: 'last_year' as const, label: 'Last Year' },
+              ].map((tab) => (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => setAuditPeriod(tab.value)}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: 8,
+                    border: 'none',
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: auditPeriod === tab.value ? 'var(--brand)' : 'transparent',
+                    color: auditPeriod === tab.value ? '#fff' : 'var(--text-tertiary)',
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <AuditSummaryComparisonTable period={auditPeriod} refreshKey={auditRefreshKey} />
+            </div>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border-subtle)' }}>
+              {(['summary', 'details', 'fraud'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setAuditTab(tab)}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: 8,
+                    border: 'none',
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: auditTab === tab ? 'var(--brand)' : 'transparent',
+                    color: auditTab === tab ? '#fff' : 'var(--text-tertiary)',
+                  }}
+                >
+                  {tab === 'summary' ? 'Summary' : tab === 'details' ? 'Details' : 'Fraud Flags'}
+                </button>
+              ))}
+            </div>
+            {auditTab === 'summary' && (
+              <AuditSummaryTable timePeriod={auditPeriod} refreshKey={auditRefreshKey} />
+            )}
+            {auditTab === 'details' && (
+              <AuditDetailsTable
+                timePeriod={auditPeriod}
+                refreshKey={auditRefreshKey}
+                initialStore={auditDetailsFilter.store}
+                initialManager={auditDetailsFilter.manager}
+              />
+            )}
+            {auditTab === 'fraud' && (
+              <FraudFlags
+                timePeriod={auditPeriod}
+                onViewDetails={(storeNumber, managerName) => {
+                  setAuditDetailsFilter({ store: storeNumber, manager: managerName })
+                  setAuditTab('details')
+                }}
+              />
             )}
           </div>
         )}
@@ -3199,10 +3270,15 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* PROFIT TAB — P&L trailing chart (dual axis) */}
-        {!loading && activeTab === 'profit' && (
+        {/* ANALYTICS TAB — Profitability content + Profit (P&L), no nested nav */}
+        {!loading && activeTab === 'analytics' && (
           <div className="fade-in">
-            {/* Controls */}
+            <ProfitabilityContent />
+            <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '32px 0' }} />
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 16, fontFamily: "'Inter', sans-serif" }}>
+              Profit & EBITDA
+            </div>
+            <div style={{ marginTop: 0 }}>
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '16px 20px', marginBottom: 24, display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 6 }}>STORE</div>
@@ -3527,6 +3603,7 @@ export default function DashboardPage() {
                 <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Select store and range to load period trend.</div>
               </div>
             )}
+            </div>
           </div>
         )}
 
@@ -4053,7 +4130,7 @@ export default function DashboardPage() {
         )}
 
         {/* GUEST EXPERIENCE TAB */}
-        {!loading && activeTab === 'guest-experience' && (
+        {!loading && activeTab === 'guest' && (
           <div className="fade-in">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <div>
@@ -4263,7 +4340,7 @@ export default function DashboardPage() {
         )}
 
         {/* YEAR VS YEAR TAB */}
-        {false && !loading && activeTab === 'yoy' && (
+        {false && !loading && (
           <div className="fade-in">
             {yoyComparisons.length === 0 ? (
               <div style={{ maxWidth: 800, margin: '0 auto' }}>
@@ -4393,364 +4470,320 @@ export default function DashboardPage() {
         {/* DASHBOARD TAB */}
         {!loading && activeTab === 'dashboard' && (
           <div className="fade-in">
-            {/* Controls Row */}
-            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '16px 20px', marginBottom: 24 }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start' }}>
-                {/* Store selector */}
-                <div style={{ flex: 1, minWidth: 300 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
-                    <span>SELECT STORES</span>
-                    <span>
-                      <span style={{ color: 'var(--brand)', cursor: 'pointer', fontWeight: 500 }} onClick={selectAll}>
-                        All
-                      </span>
-                      {' · '}
-                      <span style={{ color: 'var(--text-tertiary)', cursor: 'pointer', fontWeight: 500 }} onClick={selectNone}>
-                        None
-                      </span>
-                    </span>
+            {/* KPI Summary Row — 6 cells (mockup) */}
+            {kpiSummary && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(6, 1fr)',
+                  gap: 1,
+                  background: 'var(--border-subtle)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  marginBottom: 20,
+                }}
+              >
+                <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Total Net Sales</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+                    ${kpiSummary.totalNetSales.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {stores.map((s, i) => {
-                      const isSelected = selectedStoresSafe.includes(s.number)
-                      const storeColor = STORE_COLORS[i % STORE_COLORS.length]
-                      return (
-                        <div
-                          key={s.number}
-                          className={`store-chip ${isSelected ? 'active' : ''}`}
-                          onClick={() => toggleStore(s.number)}
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: 6,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            border: `1px solid ${isSelected ? storeColor : 'var(--border-default)'}`,
-                            background: isSelected ? `${storeColor}15` : 'var(--bg-overlay)',
-                            color: isSelected ? storeColor : 'var(--text-tertiary)',
-                            fontFamily: "'Inter', sans-serif",
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {s.number}
-                        </div>
-                      )
-                    })}
+                  <div style={{ fontSize: 11, color: kpiSummary.compPct != null ? (kpiSummary.compPct < 0 ? 'var(--danger-text)' : 'var(--success-text)') : 'var(--text-tertiary)' }}>
+                    {kpiSummary.compPct != null ? `${kpiSummary.compPct < 0 ? '↓' : '↑'} ${Math.abs(kpiSummary.compPct).toFixed(1)}% vs LY` : '—'}
                   </div>
                 </div>
-
-                {/* Metric filter */}
-                <div style={{ flex: 2, minWidth: 400 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 10 }}>
-                    METRIC FOCUS{' '}
-                    <span style={{ color: 'var(--text-tertiary)', fontWeight: 400, letterSpacing: 'normal' }}>(select one to chart, or leave blank for full report)</span>
+                <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Avg Labor %</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: (TARGETS.labor_pct != null && (kpiSummary.avgLaborPct ?? 0) <= TARGETS.labor_pct) ? 'var(--success-text)' : 'var(--text-primary)', lineHeight: 1.1 }}>
+                    {kpiSummary.avgLaborPct != null ? `${kpiSummary.avgLaborPct.toFixed(1)}%` : '—'}
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                    {METRICS.map((m) => (
-                      <div
-                        key={m.key}
-                        className={`metric-chip ${activeMetric === m.key ? 'active' : ''}`}
-                        onClick={() => setActiveMetric((prev) => (prev === m.key ? null : m.key))}
+                  <div style={{ fontSize: 11, color: (TARGETS.labor_pct != null && (kpiSummary.avgLaborPct ?? 0) <= TARGETS.labor_pct) ? 'var(--success-text)' : 'var(--text-tertiary)' }}>
+                    {(TARGETS.labor_pct != null && (kpiSummary.avgLaborPct ?? 0) <= TARGETS.labor_pct) ? 'On target' : '—'}
+                  </div>
+                </div>
+                <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Avg Food Cost</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: (TARGETS.food_cost_pct != null && (kpiSummary.avgFoodCostPct ?? 0) <= TARGETS.food_cost_pct) ? 'var(--success-text)' : (kpiSummary.avgFoodCostPct ?? 0) > (TARGETS.food_cost_pct ?? 0) ? 'var(--warning-text, #f59e0b)' : 'var(--text-primary)', lineHeight: 1.1 }}>
+                    {kpiSummary.avgFoodCostPct != null ? `${kpiSummary.avgFoodCostPct.toFixed(1)}%` : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                    {TARGETS.food_cost_pct != null && kpiSummary.avgFoodCostPct != null ? `${(kpiSummary.avgFoodCostPct - TARGETS.food_cost_pct >= 0 ? '+' : '')}${(kpiSummary.avgFoodCostPct - TARGETS.food_cost_pct).toFixed(1)}% vs ideal` : '—'}
+                  </div>
+                </div>
+                <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Avg FLM %</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: (TARGETS.flm_pct != null && (kpiSummary.avgFlmPct ?? 0) <= TARGETS.flm_pct) ? 'var(--success-text)' : 'var(--warning-text, #f59e0b)', lineHeight: 1.1 }}>
+                    {kpiSummary.avgFlmPct != null ? `${kpiSummary.avgFlmPct.toFixed(1)}%` : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                    {TARGETS.flm_pct != null ? `Target: <${TARGETS.flm_pct}%` : '—'}
+                  </div>
+                </div>
+                <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Total Orders</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+                    {kpiSummary.totalOrders != null ? kpiSummary.totalOrders.toLocaleString() : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>—</div>
+                </div>
+                <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Avg SMG Score</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: 'var(--success-text)', lineHeight: 1.1 }}>
+                    {kpiSummary.avgSmgScore != null ? kpiSummary.avgSmgScore.toFixed(1) : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>—</div>
+                </div>
+              </div>
+            )}
+
+            {/* Single merged controls bar */}
+            <div
+              style={{
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 10,
+                padding: '10px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+                marginBottom: 16,
+              }}
+            >
+              {/* Left: store chips + All · None */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {stores.map((s, i) => {
+                  const isSelected = selectedStoresSafe.includes(s.number)
+                  const storeColor = STORE_COLORS[i % STORE_COLORS.length]
+                  return (
+                    <div
+                      key={s.number}
+                      className={`store-chip ${isSelected ? 'active' : ''}`}
+                      onClick={() => toggleStore(s.number)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        border: `1px solid ${isSelected ? storeColor : 'var(--border-default)'}`,
+                        background: isSelected ? `${storeColor}15` : 'var(--bg-overlay)',
+                        color: isSelected ? storeColor : 'var(--text-tertiary)',
+                        fontFamily: "'Inter', sans-serif",
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {s.number}
+                    </div>
+                  )
+                })}
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
+                  <span style={{ color: 'var(--brand)', cursor: 'pointer', fontWeight: 500 }} onClick={selectAll}>All</span>
+                  {' · '}
+                  <span style={{ cursor: 'pointer', fontWeight: 500 }} onClick={selectNone}>None</span>
+                </span>
+              </div>
+
+              <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', flexShrink: 0 }} />
+
+              {/* Middle: metric focus chips (no label) */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                {METRICS.filter((m) => ['net_sales', 'labor_pct', 'food_cost_pct', 'flm_pct', 'doordash_sales', 'ubereats_sales'].includes(m.key)).map((m) => (
+                  <div
+                    key={m.key}
+                    className={`metric-chip ${activeMetric === m.key ? 'active' : ''}`}
+                    onClick={() => setActiveMetric((prev) => (prev === m.key ? null : m.key))}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      border: `1px solid ${activeMetric === m.key ? 'var(--info)' : 'var(--border-default)'}`,
+                      background: activeMetric === m.key ? 'var(--info-subtle)' : 'transparent',
+                      color: activeMetric === m.key ? 'var(--info-text)' : 'var(--text-tertiary)',
+                      fontFamily: "'Inter', sans-serif",
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (activeMetric !== m.key) {
+                        e.currentTarget.style.borderColor = 'var(--border-strong)'
+                        e.currentTarget.style.color = 'var(--text-secondary)'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (activeMetric !== m.key) {
+                        e.currentTarget.style.borderColor = 'var(--border-default)'
+                        e.currentTarget.style.color = 'var(--text-tertiary)'
+                      }
+                    }}
+                  >
+                    {m.label}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', flexShrink: 0 }} />
+
+              {/* Right: period + picker + Load Cube (when cube) */}
+              {dataSource === 'cube' && (
+                <>
+                  <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
+                    {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => {
+                          const newDate = p === 'daily' ? getYesterdayDate() : p === 'weekly' ? getDefaultWeek() : p === 'monthly' ? getDefaultMonth() : String(new Date().getFullYear())
+                          setCubePeriod(p)
+                          setCubeDate(newDate)
+                          void loadCubeData(newDate, p)
+                        }}
                         style={{
                           padding: '6px 12px',
                           borderRadius: 6,
-                          fontSize: 13,
-                          fontWeight: 500,
-                          border: `1px solid ${activeMetric === m.key ? 'var(--info)' : 'var(--border-default)'}`,
-                          background: activeMetric === m.key ? 'var(--info-subtle)' : 'transparent',
-                          color: activeMetric === m.key ? 'var(--info-text)' : 'var(--text-tertiary)',
-                          fontFamily: "'Inter', sans-serif",
+                          border: 'none',
                           cursor: 'pointer',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (activeMetric !== m.key) {
-                            e.currentTarget.style.borderColor = 'var(--border-strong)'
-                            e.currentTarget.style.color = 'var(--text-secondary)'
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (activeMetric !== m.key) {
-                            e.currentTarget.style.borderColor = 'var(--border-default)'
-                            e.currentTarget.style.color = 'var(--text-tertiary)'
-                          }
+                          fontFamily: "'Inter', sans-serif",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          letterSpacing: '0.04em',
+                          background: cubePeriod === p ? 'var(--bg-elevated)' : 'transparent',
+                          color: cubePeriod === p ? 'var(--text-primary)' : 'var(--text-tertiary)',
                         }}
                       >
-                        {m.label}
-                        {m.tooltip && (
-                          <span style={{ marginLeft: 4, cursor: 'help', opacity: 0.85 }} title={m.tooltip} aria-label="Info">ℹ</span>
-                        )}
-                      </div>
+                        {p === 'daily' ? 'Day' : p === 'weekly' ? 'Week' : p === 'monthly' ? 'Month' : 'Year'}
+                      </button>
                     ))}
-                    <div
-                      className={`metric-chip ${compareMode ? 'active' : ''}`}
-                      onClick={() => setCompareMode((prev) => !prev)}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: 6,
-                        fontSize: 13,
-                        fontWeight: 500,
-                        border: `1px solid ${compareMode ? 'var(--info)' : 'var(--border-default)'}`,
-                        background: compareMode ? 'var(--info-subtle)' : 'transparent',
-                        color: compareMode ? 'var(--info-text)' : 'var(--text-tertiary)',
-                        fontFamily: "'Inter', sans-serif",
-                        cursor: 'pointer',
-                        marginLeft: 'auto',
+                  </div>
+                  {cubePeriod === 'yearly' ? (
+                    <select
+                      value={cubeDate}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setCubeDate(val)
+                        void loadCubeData(val, 'yearly')
                       }}
-                        onMouseEnter={(e) => {
-                          if (!compareMode) {
-                            e.currentTarget.style.borderColor = 'var(--border-strong)'
-                            e.currentTarget.style.color = 'var(--text-secondary)'
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!compareMode) {
-                            e.currentTarget.style.borderColor = 'var(--border-default)'
-                            e.currentTarget.style.color = 'var(--text-tertiary)'
-                          }
-                        }}
-                      >
-                        Compare Mode
-                      </div>
-                    <div
-                      className="metric-chip"
-                      onClick={() => router.push('/trends')}
                       style={{
-                        padding: '6px 12px',
+                        padding: '6px 10px',
                         borderRadius: 6,
-                        fontSize: 13,
-                        fontWeight: 500,
                         border: '1px solid var(--border-default)',
-                        background: 'transparent',
-                        color: 'var(--text-tertiary)',
+                        background: 'var(--bg-overlay)',
+                        color: 'var(--text-primary)',
                         fontFamily: "'Inter', sans-serif",
-                        cursor: 'pointer',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = 'var(--border-strong)'
-                        e.currentTarget.style.color = 'var(--text-secondary)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = 'var(--border-default)'
-                        e.currentTarget.style.color = 'var(--text-tertiary)'
+                        fontSize: 12,
                       }}
                     >
-                      Trends
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Date control bar (when LIVE CUBE selected) */}
-            {/* Tableau date (used for Leadership + BoZoCoRo) */}
-            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 20px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 6 }}>TABLEAU DATE</div>
-                  <input
-                    type="date"
-                    value={tableauDate}
-                    onChange={(e) => setTableauDate(e.target.value)}
-                    style={{
-                      padding: '8px 12px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border-default)',
-                      background: 'var(--bg-overlay)',
-                      color: 'var(--text-primary)',
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: 13,
-                    }}
-                  />
-                </div>
-                {tableauLoading && (
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>Loading Tableau…</div>
-                )}
-              </div>
-            </div>
-
-            {dataSource === 'cube' && (
-              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '16px 20px', marginBottom: 24 }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 8 }}>PERIOD</div>
-                    <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
-                      {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((p) => (
-                        <button
-                          key={p}
-                          onClick={() => {
-                            const newDate = p === 'daily' ? getYesterdayDate() : p === 'weekly' ? getDefaultWeek() : p === 'monthly' ? getDefaultMonth() : String(new Date().getFullYear())
-                            setCubePeriod(p)
-                            setCubeDate(newDate)
-                            void loadCubeData(newDate, p)
-                          }}
-                          style={{
-                            padding: '6px 16px',
-                            borderRadius: 8,
-                            border: 'none',
-                            cursor: 'pointer',
-                            fontFamily: "'Inter', sans-serif",
-                            fontSize: 13,
-                            fontWeight: 600,
-                            letterSpacing: '0.04em',
-                            background: cubePeriod === p ? 'var(--bg-elevated)' : 'transparent',
-                            color: cubePeriod === p ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                          }}
-                        >
-                          {p === 'daily' ? 'Day' : p === 'weekly' ? 'Week' : p === 'monthly' ? 'Month' : 'Year'}
-                        </button>
+                      {[2022, 2023, 2024, 2025, 2026].map((y) => (
+                        <option key={y} value={String(y)}>{y}</option>
                       ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.12em', marginBottom: 8 }}>
-                      {cubePeriod === 'daily' ? 'DATE' : cubePeriod === 'weekly' ? 'WEEK' : cubePeriod === 'monthly' ? 'MONTH' : 'YEAR'}
-                    </div>
-                    {cubePeriod === 'yearly' ? (
+                    </select>
+                  ) : cubePeriod === 'weekly' ? (
+                    <div style={{ display: 'flex', gap: 6 }}>
                       <select
-                        value={cubeDate}
+                        value={cubeDate.includes('-W') ? cubeDate.split('-')[0] : String(new Date().getFullYear())}
                         onChange={(e) => {
-                          const val = e.target.value
+                          const year = e.target.value
+                          const week = cubeDate.includes('-W') ? (cubeDate.split('-W')[1] || '1') : String(getDefaultWeek().split('-W')[1] || '1')
+                          const val = `${year}-W${week.padStart(2, '0')}`
                           setCubeDate(val)
-                          void loadCubeData(val, 'yearly')
+                          void loadCubeData(val, 'weekly')
                         }}
                         style={{
-                          padding: '8px 12px',
+                          padding: '6px 10px',
                           borderRadius: 6,
                           border: '1px solid var(--border-default)',
                           background: 'var(--bg-overlay)',
                           color: 'var(--text-primary)',
                           fontFamily: "'Inter', sans-serif",
-                          fontSize: 13,
+                          fontSize: 12,
                         }}
                       >
                         {[2022, 2023, 2024, 2025, 2026].map((y) => (
                           <option key={y} value={String(y)}>{y}</option>
                         ))}
                       </select>
-                    ) : cubePeriod === 'weekly' ? (
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <select
-                          value={cubeDate.includes('-W') ? cubeDate.split('-')[0] : String(new Date().getFullYear())}
-                          onChange={(e) => {
-                            const year = e.target.value
-                            const week = cubeDate.includes('-W') ? (cubeDate.split('-W')[1] || '1') : String(getDefaultWeek().split('-W')[1] || '1')
-                            const val = `${year}-W${week.padStart(2, '0')}`
-                            setCubeDate(val)
-                            void loadCubeData(val, 'weekly')
-                          }}
-                          style={{
-                            padding: '8px 12px',
-                            borderRadius: 6,
-                            border: '1px solid var(--border-default)',
-                            background: 'var(--bg-overlay)',
-                            color: 'var(--text-primary)',
-                            fontFamily: "'Inter', sans-serif",
-                            fontSize: 13,
-                          }}
-                        >
-                          {[2022, 2023, 2024, 2025, 2026].map((y) => (
-                            <option key={y} value={String(y)}>{y}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={cubeDate.includes('-W') ? parseInt(cubeDate.split('-W')[1] || '1', 10) : parseInt(getDefaultWeek().split('-W')[1] || '1', 10)}
-                          onChange={(e) => {
-                            const week = e.target.value
-                            const year = cubeDate.includes('-W') ? cubeDate.split('-')[0] : String(new Date().getFullYear())
-                            const val = `${year}-W${String(week).padStart(2, '0')}`
-                            setCubeDate(val)
-                            void loadCubeData(val, 'weekly')
-                          }}
-                          style={{
-                            padding: '8px 12px',
-                            borderRadius: 6,
-                            border: '1px solid var(--border-default)',
-                            background: 'var(--bg-overlay)',
-                            color: 'var(--text-primary)',
-                            fontFamily: "'Inter', sans-serif",
-                            fontSize: 13,
-                          }}
-                        >
-                          {Array.from({ length: 52 }, (_, i) => i + 1).map((w) => (
-                            <option key={w} value={w}>Week {w}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : (
-                      <input
-                        type={cubePeriod === 'daily' ? 'date' : 'month'}
-                        value={cubeDate}
+                      <select
+                        value={cubeDate.includes('-W') ? parseInt(cubeDate.split('-W')[1] || '1', 10) : parseInt(getDefaultWeek().split('-W')[1] || '1', 10)}
                         onChange={(e) => {
-                          const val = e.target.value
+                          const week = e.target.value
+                          const year = cubeDate.includes('-W') ? cubeDate.split('-')[0] : String(new Date().getFullYear())
+                          const val = `${year}-W${String(week).padStart(2, '0')}`
                           setCubeDate(val)
-                          void loadCubeData(val, cubePeriod)
+                          void loadCubeData(val, 'weekly')
                         }}
                         style={{
-                          padding: '8px 12px',
+                          padding: '6px 10px',
                           borderRadius: 6,
                           border: '1px solid var(--border-default)',
                           background: 'var(--bg-overlay)',
                           color: 'var(--text-primary)',
                           fontFamily: "'Inter', sans-serif",
-                          fontSize: 13,
+                          fontSize: 12,
                         }}
-                      />
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
-                    <button
-                      onClick={() => void loadCubeData()}
-                      disabled={cubeLoading}
-                      style={{
-                        padding: '8px 20px',
-                        borderRadius: 8,
-                        border: 'none',
-                        cursor: cubeLoading ? 'not-allowed' : 'pointer',
-                        fontFamily: "'Inter', sans-serif",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        letterSpacing: '0.04em',
-                        background: 'var(--brand)',
-                        color: '#fff',
+                      >
+                        {Array.from({ length: 52 }, (_, i) => i + 1).map((w) => (
+                          <option key={w} value={w}>W{w}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <input
+                      type={cubePeriod === 'daily' ? 'date' : 'month'}
+                      value={cubeDate}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setCubeDate(val)
+                        void loadCubeData(val, cubePeriod)
                       }}
-                    >
-                      {cubeLoading ? (
-                        <>
-                          <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid rgba(255,255,255,0.5)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginRight: 8, verticalAlign: 'middle' }} />
-                          Loading…
-                        </>
-                      ) : (
-                        'Load Cube Data'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        border: '1px solid var(--border-default)',
+                        background: 'var(--bg-overlay)',
+                        color: 'var(--text-primary)',
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: 12,
+                      }}
+                    />
+                  )}
+                  <button
+                    onClick={() => void loadCubeData()}
+                    disabled={cubeLoading}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 6,
+                      border: 'none',
+                      cursor: cubeLoading ? 'not-allowed' : 'pointer',
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      letterSpacing: '0.04em',
+                      background: 'var(--brand)',
+                      color: '#fff',
+                    }}
+                  >
+                    {cubeLoading ? (
+                      <>
+                        <span style={{ display: 'inline-block', width: 10, height: 10, border: '2px solid rgba(255,255,255,0.5)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginRight: 6, verticalAlign: 'middle' }} />
+                        Loading…
+                      </>
+                    ) : (
+                      'Load Cube Data'
+                    )}
+                  </button>
+                </>
+              )}
 
-            {/* Compare Mode */}
-            {compareMode ? (
-              <ComparisonPanel
-                selectedStores={selectedStoresSafe}
-                activeMetric={activeMetric}
-                reports={reports}
-                stores={stores}
-                metrics={METRICS}
-                storeColors={STORE_COLORS}
-                targets={TARGETS}
-                onMetricSelect={(key) => setActiveMetric(key as MetricKey)}
-                cubeData={cubeData}
-                cubeDate={cubeDate}
-                cubePeriod={cubePeriod}
-              />
-            ) : (
-              <>
-                {/* Store KPI Cards */}
+            </div>
+
+            {/* Store KPI Cards — tighter grid per mockup */}
+            <>
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: `repeat(${Math.min(selectedStoresSafe.length, 3) || 1}, 1fr)`,
-                    gap: 16,
-                    marginBottom: 24,
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: 12,
+                    marginBottom: 20,
+                    alignItems: 'start',
                   }}
                 >
                   {selectedStoresSafe.map((num) => {
@@ -4798,11 +4831,105 @@ export default function DashboardPage() {
                 ) : (
                   <FullReportTable selectedStores={selectedStoresSafe} stores={stores} reports={reports} />
                 )}
-              </>
-            )}
 
-            {/* Targets row */}
-            <div style={{ marginTop: 24, display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                {/* Bottom charts row — weekly trend, labor ranking, food cost variance (mockup) */}
+                {(() => {
+                  const laborTarget = TARGETS.labor_pct ?? 28.68
+                  const groupTotalLatestWeek = weeklyTrendData.length > 0 ? (weeklyTrendData[weeklyTrendData.length - 1]?.total ?? 0) : 0
+                  const laborRows = selectedStoresSafe
+                    .map((num) => {
+                      const s = stores.find((x) => x.number === num)
+                      const r = cubeData?.find((x) => String(x.storeNumber) === num)
+                      const pct = r?.totalLaborPct ?? r?.laborPct ?? null
+                      return { storeNum: num, location: s?.location ?? num, laborPct: pct }
+                    })
+                    .filter((x) => x.laborPct != null)
+                    .sort((a, b) => (a.laborPct ?? 0) - (b.laborPct ?? 0))
+                  const laborMax = Math.max(...laborRows.map((r) => r.laborPct ?? 0), 1)
+                  const idealFood = TARGETS.food_cost_pct ?? 26.42
+                  const fcRows = selectedStoresSafe
+                    .map((num) => {
+                      const s = stores.find((x) => x.number === num)
+                      const r = cubeData?.find((x) => String(x.storeNumber) === num)
+                      const actual = r?.actualFoodPct ?? (r?.netSales && r?.foodCostUsd ? (r.foodCostUsd / r.netSales) * 100 : null)
+                      const gap = actual != null ? actual - idealFood : null
+                      return { storeNum: num, location: s?.location ?? s?.name ?? num, actual, gap }
+                    })
+                    .filter((x) => x.actual != null)
+                    .sort((a, b) => (b.gap ?? 0) - (a.gap ?? 0))
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr', gap: 12, marginTop: 16 }}>
+                      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 16, minHeight: 180 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 14 }}>📊 Weekly Sales Trend</div>
+                        <div style={{ height: 120 }}>
+                          <ResponsiveContainer width="100%" height={120}>
+                            <BarChart data={weeklyTrendData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                              <Bar dataKey="total" fill="var(--brand)" radius={[3, 3, 0, 0]} />
+                              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'var(--text-tertiary)' }} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 10, borderTop: '1px solid var(--border-subtle)', marginTop: 4 }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Group Total (latest week)</div>
+                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: 'var(--text-primary)', fontWeight: 500 }}>
+                              ${groupTotalLatestWeek.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 16 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 14 }}>👥 Labor % Ranking</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {(laborRows.length ? laborRows : []).map((row) => {
+                            const pct = row.laborPct ?? 0
+                            const isOver = laborTarget != null && pct > laborTarget
+                            return (
+                              <div key={row.storeNum} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ fontSize: 12, color: 'var(--text-secondary)', width: 72, flexShrink: 0, textAlign: 'right' }}>{row.location}</div>
+                                <div style={{ flex: 1, height: 8, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
+                                  <div style={{ width: `${(pct / laborMax) * 100}%`, height: '100%', borderRadius: 4, background: isOver ? 'var(--danger-text)' : pct > (laborTarget ?? 0) * 0.95 ? 'var(--warning-text, #f59e0b)' : 'var(--success-text)' }} />
+                                </div>
+                                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 500, width: 36, textAlign: 'right', flexShrink: 0, color: isOver ? 'var(--danger-text)' : 'var(--text-primary)' }}>
+                                  {pct.toFixed(1)}%{isOver ? ' ▲' : ''}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 16 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 14 }}>🍕 Food Cost Variance</div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', textAlign: 'left', paddingBottom: 8, borderBottom: '1px solid var(--border-subtle)' }}>Store</th>
+                              <th style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', textAlign: 'right', paddingBottom: 8, borderBottom: '1px solid var(--border-subtle)' }}>Actual %</th>
+                              <th style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', textAlign: 'right', paddingBottom: 8, borderBottom: '1px solid var(--border-subtle)' }}>Ideal %</th>
+                              <th style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', textAlign: 'right', paddingBottom: 8, borderBottom: '1px solid var(--border-subtle)' }}>Gap</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fcRows.map((row) => (
+                              <tr key={row.storeNum}>
+                                <td style={{ padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', color: 'var(--text-primary)', fontWeight: 500 }}>{row.location}</td>
+                                <td style={{ padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--text-secondary)' }}>{row.actual != null ? `${row.actual.toFixed(1)}%` : '—'}</td>
+                                <td style={{ padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--text-secondary)' }}>{idealFood}%</td>
+                                <td style={{ padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: 600, color: (row.gap ?? 0) > 3 ? 'var(--danger-text)' : (row.gap ?? 0) > 1.5 ? 'var(--warning-text, #f59e0b)' : 'var(--success-text)' }}>
+                                  {row.gap != null ? `${row.gap >= 0 ? '+' : ''}${row.gap.toFixed(1)}%` : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </>
+
+            {/* Targets row — slim chips per mockup */}
+            <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {METRICS.map((m) => {
                 const isDollarTarget = m.key === 'net_sales' || m.key === 'cash_short' || m.key === 'doordash_sales' || m.key === 'ubereats_sales'
                 const targetVal = TARGETS[m.key]
@@ -4815,21 +4942,40 @@ export default function DashboardPage() {
                       : targetVal != null
                         ? `< ${targetVal}%`
                         : '—'
+                const onTarget = targetVal != null && isGood(m.key, targetVal - 0.01)
                 return (
-                <div key={m.key} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.12em', marginBottom: 8 }}>
-                    {m.label.toUpperCase()} TARGET
-                    {m.tooltip && (
-                      <span style={{ marginLeft: 4, cursor: 'help', opacity: 0.85 }} title={m.tooltip} aria-label="Info">ℹ</span>
+                  <div
+                    key={m.key}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 7,
+                      padding: '6px 12px',
+                      borderRadius: 7,
+                      border: '1px solid var(--border-subtle)',
+                      background: 'var(--bg-surface)',
+                      fontSize: 11.5,
+                      fontFamily: "'Inter', sans-serif",
+                    }}
+                  >
+                    <span style={{ color: 'var(--text-tertiary)' }}>{m.label} Target</span>
+                    <span style={{ color: 'var(--text-secondary)', fontFamily: "'JetBrains Mono', monospace'" }}>{targetLabel}</span>
+                    {targetVal != null && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          letterSpacing: '0.04em',
+                          background: onTarget ? 'var(--success-subtle)' : 'var(--danger-subtle)',
+                          color: onTarget ? 'var(--success-text)' : 'var(--danger-text)',
+                        }}
+                      >
+                        {onTarget ? 'ON TARGET' : 'OFF TARGET'}
+                      </span>
                     )}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>
-                        {targetLabel}
-                    </div>
-                      {targetVal != null && <Badge value={targetVal - 0.01} metricKey={m.key} />}
-                  </div>
-                </div>
                 )
               })}
             </div>
