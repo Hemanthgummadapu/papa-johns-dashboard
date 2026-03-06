@@ -8,6 +8,7 @@ import {
   Line,
   BarChart,
   Bar,
+  Cell,
   ComposedChart,
   XAxis,
   YAxis,
@@ -793,7 +794,7 @@ function KpiCard({
         <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Net Sales</div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(netSalesVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
-          <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{compPct != null ? (compPct >= 0 ? '↑' : '↓') + ' vs prev period' : '—'}</div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{compPct != null ? (compPct >= 0 ? '↑' : '↓') + ' vs last year' : '—'}</div>
         </div>
         <div style={{ background: laborGood ? 'var(--bg-base)' : 'var(--danger-subtle)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: laborGood ? 'var(--text-tertiary)' : 'var(--danger-text)', marginBottom: 4 }}>Labor %</div>
@@ -1341,6 +1342,8 @@ export default function DashboardPage() {
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly') // weekly | monthly
   const [activeTab, setActiveTab] = useState<'dashboard' | 'trends' | 'operations' | 'analytics' | 'forecast' | 'live' | 'guest'>('dashboard')
   const [compareMode, setCompareMode] = useState(false) // compare mode toggle
+  const [trendPeriods, setTrendPeriods] = useState<Array<{ label: string; total: number; lyTotal?: number; sortKey: string; isCurrent?: boolean }>>([])
+  const [trendLoading, setTrendLoading] = useState(false)
   const [trendsPeriod, setTrendsPeriod] = useState<'3M' | '6M' | '1Y' | '2Y' | '3Y'>('6M')
   const [trendsMetricKey, setTrendsMetricKey] = useState<MetricKey>('net_sales')
   const [trendsStoresSelected, setTrendsStoresSelected] = useState<string[]>([])
@@ -2188,29 +2191,163 @@ export default function DashboardPage() {
     }
   }, [dataSource, cubeData, selectedStoresSafe, reports])
 
-  // Weekly sales trend for bottom charts row — group reports by week, last 6 weeks
-  const weeklyTrendData = useMemo(() => {
-    const getWeekKey = (dateStr: string) => {
-      const d = new Date(dateStr)
-      const day = d.getDay()
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-      const monday = new Date(d)
-      monday.setDate(diff)
-      return monday.toISOString().slice(0, 10)
+  // Sales trend for bottom charts row — load historical periods directly from cube
+  useEffect(() => {
+    if (!cubeData || cubeData.length === 0) {
+      setTrendPeriods([])
+      return
     }
-    const byWeek: Record<string, number> = {}
-    selectedStoresSafe.forEach((storeNum) => {
-      const pts = reports[storeNum] ?? []
-      pts.forEach((r) => {
-        const weekKey = getWeekKey(r.report_date)
-        byWeek[weekKey] = (byWeek[weekKey] || 0) + (r.net_sales ?? 0)
-      })
+
+    let cancelled = false
+
+    const sumNetSales = (rows: CubeStoreRow[]) => rows.reduce((sum, s) => sum + (s.netSales ?? 0), 0)
+
+    const fetchTrendPeriod = async (date: string, period: CubePeriod) => {
+      try {
+        const res = await fetch(
+          `/api/cube?date=${encodeURIComponent(formatDateForApi(date, period))}&period=${encodeURIComponent(period)}`,
+          { cache: 'no-store', credentials: 'include' }
+        )
+        const json = await res.json()
+        const stores = json?.success && Array.isArray(json.stores) ? (json.stores as CubeStoreRow[]) : []
+        return sumNetSales(stores)
+      } catch {
+        return 0
+      }
+    }
+
+    const loadTrendPeriods = async () => {
+      setTrendLoading(true)
+      try {
+        const periods: Array<{ label: string; total: number; lyTotal?: number; sortKey: string; isCurrent?: boolean }> = []
+        const anchorDate =
+          activeCubeDate ||
+          cubeDate ||
+          (cubePeriod === 'weekly'
+            ? getDefaultWeek()
+            : cubePeriod === 'monthly'
+              ? getDefaultMonth()
+              : cubePeriod === 'yearly'
+                ? String(new Date().getFullYear())
+                : getYesterdayDate())
+
+        if (cubePeriod === 'monthly') {
+          const monthKeys = getPrevMonths(formatDateForApi(anchorDate, 'monthly'), 4)
+          const rows = await Promise.all(
+            monthKeys.map(async (monthKey, idx) => {
+              const total = await fetchTrendPeriod(monthKey, 'monthly')
+              const lyTotal = await fetchTrendPeriod(getLyDate(monthKey, 'monthly'), 'monthly')
+              const [year, month] = monthKey.split('-').map(Number)
+              const d = new Date(year, (month || 1) - 1, 1)
+              return {
+                label: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+                total,
+                lyTotal,
+                sortKey: monthKey,
+              }
+            })
+          )
+          periods.push(...rows)
+        } else if (cubePeriod === 'weekly') {
+          const weekKeys = getPrevWeeks(formatDateForApi(anchorDate, 'weekly'), 6)
+          const rows = await Promise.all(
+            weekKeys.map(async (weekKey, idx) => {
+              const total = await fetchTrendPeriod(weekKey, 'weekly')
+              const lyTotal = await fetchTrendPeriod(getLyDate(weekKey, 'weekly'), 'weekly')
+              const wk = parseInt(weekKey.split('-W')[1] || '0', 10)
+              return {
+                label: `WK${wk}`,
+                total,
+                lyTotal,
+                sortKey: weekKey,
+              }
+            })
+          )
+          periods.push(...rows)
+        } else if (cubePeriod === 'daily') {
+          const base = new Date(formatDateForApi(anchorDate, 'daily'))
+          const rows = await Promise.all(
+            Array.from({ length: 7 }, (_, idx) => 6 - idx).map(async (offset, idx, arr) => {
+              const d = new Date(base)
+              d.setDate(base.getDate() - offset)
+              const dateStr = d.toISOString().slice(0, 10)
+              const total = await fetchTrendPeriod(dateStr, 'daily')
+              const lyTotal = await fetchTrendPeriod(getLyDate(dateStr, 'daily'), 'daily')
+              return {
+                label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                total,
+                lyTotal,
+                sortKey: dateStr,
+              }
+            })
+          )
+          periods.push(...rows)
+        } else {
+          const baseYear = parseInt(formatDateForApi(anchorDate, 'yearly'), 10) || new Date().getFullYear()
+          const years = [baseYear - 2, baseYear - 1, baseYear]
+          const rows = await Promise.all(
+            years.map(async (year, idx) => {
+              const yearKey = String(year)
+              const total = await fetchTrendPeriod(yearKey, 'yearly')
+              const lyTotal = await fetchTrendPeriod(getLyDate(yearKey, 'yearly'), 'yearly')
+              return {
+                label: yearKey,
+                total,
+                lyTotal,
+                sortKey: yearKey,
+              }
+            })
+          )
+          periods.push(...rows)
+        }
+
+        if (!cancelled) {
+          setTrendPeriods(periods.filter((p) => p.total > 0))
+        }
+      } finally {
+        if (!cancelled) {
+          setTrendLoading(false)
+        }
+      }
+    }
+
+    void loadTrendPeriods()
+
+    return () => {
+      cancelled = true
+    }
+  }, [cubeData, cubePeriod, activeCubeDate, cubeDate])
+
+  const trendDataWithChange = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const currentWeekKey = getDefaultWeek()
+    const currentMonthKey = todayStr.slice(0, 7)
+    const currentYearKey = todayStr.slice(0, 4)
+
+    return trendPeriods.map((d, i, arr) => {
+      const prev = arr[i - 1]
+      const pctChange =
+        i === 0 || !prev || prev.total <= 0
+          ? null
+          : Number((((d.total - prev.total) / prev.total) * 100).toFixed(1))
+
+      const isCurrent =
+        cubePeriod === 'daily'
+          ? d.sortKey === todayStr
+          : i === arr.length - 1 &&
+            (cubePeriod === 'weekly'
+              ? d.sortKey === currentWeekKey
+              : cubePeriod === 'monthly'
+                ? d.sortKey === currentMonthKey
+                : d.sortKey === currentYearKey)
+
+      return {
+        ...d,
+        pctChange,
+        isCurrent,
+      }
     })
-    return Object.entries(byWeek)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-6)
-      .map(([label, total]) => ({ label: label.slice(0, 10), total }))
-  }, [reports, selectedStoresSafe])
+  }, [trendPeriods, cubePeriod])
 
   // Trends tab: default to all stores selected on entry
   useEffect(() => {
@@ -4835,7 +4972,23 @@ export default function DashboardPage() {
                 {/* Bottom charts row — weekly trend, labor ranking, food cost variance (mockup) */}
                 {(() => {
                   const laborTarget = TARGETS.labor_pct ?? 28.68
-                  const groupTotalLatestWeek = weeklyTrendData.length > 0 ? (weeklyTrendData[weeklyTrendData.length - 1]?.total ?? 0) : 0
+                  const latestFullIndex = trendDataWithChange.length >= 2 ? trendDataWithChange.length - 2 : trendDataWithChange.length - 1
+                  const latestFullEntry = latestFullIndex >= 0 ? trendDataWithChange[latestFullIndex] : undefined
+                  const prevFullEntry = latestFullIndex > 0 ? trendDataWithChange[latestFullIndex - 1] : undefined
+                  const groupTotalLatest = latestFullEntry?.total ?? 0
+                  const latestFullLabel = latestFullEntry?.label ?? '—'
+                  const deltaVsPrev = latestFullEntry && prevFullEntry ? latestFullEntry.total - prevFullEntry.total : null
+                  const pctVsPrev = latestFullEntry && prevFullEntry && prevFullEntry.total > 0
+                    ? ((latestFullEntry.total - prevFullEntry.total) / prevFullEntry.total) * 100
+                    : null
+                  const trendChartTitle =
+                    cubePeriod === 'daily'
+                      ? 'DAILY SALES TREND'
+                      : cubePeriod === 'weekly'
+                        ? 'WEEKLY SALES TREND'
+                        : cubePeriod === 'monthly'
+                          ? 'MONTHLY SALES TREND'
+                          : 'YEARLY SALES TREND'
                   const laborRows = selectedStoresSafe
                     .map((num) => {
                       const s = stores.find((x) => x.number === num)
@@ -4859,24 +5012,77 @@ export default function DashboardPage() {
                     .sort((a, b) => (b.gap ?? 0) - (a.gap ?? 0))
                   return (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr', gap: 12, marginTop: 16 }}>
-                      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 16, minHeight: 180 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 14 }}>📊 Weekly Sales Trend</div>
-                        <div style={{ height: 120 }}>
-                          <ResponsiveContainer width="100%" height={120}>
-                            <BarChart data={weeklyTrendData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-                              <Bar dataKey="total" fill="var(--brand)" radius={[3, 3, 0, 0]} />
-                              <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'var(--text-tertiary)' }} />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 10, borderTop: '1px solid var(--border-subtle)', marginTop: 4 }}>
-                          <div>
-                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Group Total (latest week)</div>
-                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: 'var(--text-primary)', fontWeight: 500 }}>
-                              ${groupTotalLatestWeek.toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                            </div>
+                      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 16, minHeight: 220 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 14 }}>📊 {trendChartTitle}</div>
+                        {trendLoading ? (
+                          <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-tertiary)', fontSize: 12 }}>Loading trend...</div>
+                        ) : !cubeData?.length ? (
+                          <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-tertiary)', fontSize: 12 }}>
+                            Load cube data to see trend
                           </div>
-                        </div>
+                        ) : (
+                          <>
+                            <div style={{ height: 100 }}>
+                              <ResponsiveContainer width="100%" height={100}>
+                                <BarChart data={trendDataWithChange} margin={{ top: 4, right: 8, left: 8, bottom: 4 }} barCategoryGap="20%">
+                                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#5a6070' }} axisLine={false} tickLine={false} />
+                                  <YAxis hide />
+                                  <Tooltip
+                                    formatter={(value: number | undefined) => [`$${Number(value ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`, 'Net Sales']}
+                                    labelFormatter={(label) => `Period: ${label}`}
+                                    contentStyle={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 8 }}
+                                  />
+                                  <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                                    <LabelList
+                                      dataKey="pctChange"
+                                      position="insideBottom"
+                                      content={(props: any) => {
+                                        const { x, y, width, height, value } = props
+                                        if (value == null || value === '') return null
+                                        const num = parseFloat(String(value))
+                                        if (!Number.isFinite(num)) return null
+                                        return (
+                                          <text
+                                            x={x + width / 2}
+                                            y={y + height - 6}
+                                            textAnchor="middle"
+                                            fontSize={10}
+                                            fontFamily="DM Mono, monospace"
+                                            fill={num < 0 ? '#ef4444' : '#22c55e'}
+                                          >
+                                            {num > 0 ? '+' : ''}{num.toFixed(1)}%
+                                          </text>
+                                        )
+                                      }}
+                                    />
+                                    {trendDataWithChange.map((entry, i) => (
+                                      <Cell key={i} fill={entry.isCurrent ? '#06b6d4' : '#e8441a'} />
+                                    ))}
+                                  </Bar>
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingTop: 10, borderTop: '1px solid var(--border-subtle)', marginTop: 4, gap: 16 }}>
+                              <div>
+                                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>GROUP TOTAL {latestFullLabel}</div>
+                                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, color: 'var(--text-primary)', fontWeight: 600 }}>
+                                  ${groupTotalLatest.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                                </div>
+                              </div>
+                              {pctVsPrev != null && deltaVsPrev != null && (
+                                <div style={{ textAlign: 'right' }}>
+                                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>VS PREV PERIOD</div>
+                                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, color: pctVsPrev < 0 ? '#ef4444' : '#22c55e', fontWeight: 600 }}>
+                                    {pctVsPrev > 0 ? '+' : ''}{pctVsPrev.toFixed(1)}%
+                                  </div>
+                                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                                    {deltaVsPrev > 0 ? '+$' : deltaVsPrev < 0 ? '-$' : '$'}{Math.abs(deltaVsPrev).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
                       <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 16 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 14 }}>👥 Labor % Ranking</div>

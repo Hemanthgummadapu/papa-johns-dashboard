@@ -29,6 +29,6 @@ export default function ProfitabilityAnalyticsPage() {
         </div>
       </header>
       <ProfitabilityContent />
-    </div>
-  )
-}
+                    </div>
+                  )
+                }
