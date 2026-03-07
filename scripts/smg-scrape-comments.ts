@@ -113,7 +113,7 @@ async function scrapeComments() {
       // Check if Angular has loaded by looking for ng-app, ng-controller, or Angular elements
       const hasAngular = document.querySelector('[ng-app], [ng-controller], [ng-repeat], comment-report-item, .comment-list');
       // Also check if jQuery is done (common in AngularJS apps)
-      const jqReady = !window.jQuery || window.jQuery.active === 0;
+      const jqReady = !(window as any).jQuery || (window as any).jQuery.active === 0;
       return hasAngular && jqReady;
     }, { timeout: 30000 }).catch(() => {
       console.log('⚠️  Angular ready check timed out, continuing anyway...');
@@ -227,7 +227,7 @@ async function scrapeComments() {
       
       for (const item of commentItems) {
         // Find the nearest .day-label above this item for date
-        let itemDate = currentDate;
+        let itemDate: string | null = currentDate;
         let parent = item.parentElement;
         while (parent && !itemDate) {
           const dayLabel = parent.querySelector('.day-label');
