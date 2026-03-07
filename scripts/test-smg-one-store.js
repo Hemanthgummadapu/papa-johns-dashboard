@@ -484,16 +484,11 @@ async function saveToSupabase(storeId, data) {
   await page.waitForTimeout(3000);
 
   // Check for Change Dates and run Current Period setup if visible
-  const changeDates = await page.$('text=Change Dates').catch(() => null);
-  if (changeDates) {
-    console.log('✅ Change Dates visible, running Current Period setup');
-    await ensureCurrentPeriod(page);
-  } else {
-    console.log('✅ Change Dates not visible, likely already on Current Period');
-  }
+  console.log('✅ Running Current Period setup (always)');
+  await ensureCurrentPeriod(page);
 
   // Wait for page to fully reload after Build Report
-  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   await page.waitForSelector('.unitSelectionDD', { timeout: 30000, state: 'attached' });
   console.log('✅ Page ready for store switching');
 
@@ -518,7 +513,7 @@ async function saveToSupabase(storeId, data) {
       }, storeId);
       
       // Wait for page to reload after store switch
-      await page.waitForLoadState('domcontentloaded');
+      await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
       await page.waitForTimeout(2000);
 
       await page.waitForFunction((id) =>

@@ -63,8 +63,10 @@ export async function setupPeriodSelection(
   // 5. Wait for jQuery AJAX to complete
   await page.evaluate(() => {
     return new Promise<void>(resolve => {
+      const deadline = Date.now() + 10000;
       const check = () => {
         if ((window as any).jQuery && (window as any).jQuery.active === 0) resolve();
+        else if (Date.now() > deadline) resolve();
         else setTimeout(check, 100);
       };
       check();
@@ -394,8 +396,10 @@ export async function scrapeSMG(
 
   await page.evaluate(() => {
     return new Promise<void>(resolve => {
+      const deadline = Date.now() + 10000;
       const check = () => {
         if ((window as any).jQuery && (window as any).jQuery.active === 0) resolve();
+        else if (Date.now() > deadline) resolve();
         else setTimeout(check, 100);
       };
       check();
@@ -479,7 +483,7 @@ export async function scrapeSMG(
           (window as any).jQuery.active === 0 &&
           document.querySelector('.unitSelectionDD')
         );
-      }, { timeout: 30000 });
+      }, { timeout: 15000 }).catch(() => { /* timeout ok, continue */ });
 
       // Scrape immediately (nulls are valid)
       // Extract data - ONLY ranking table and "How are we doing?" table

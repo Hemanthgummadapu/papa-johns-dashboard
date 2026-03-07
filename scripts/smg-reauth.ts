@@ -4,7 +4,7 @@
  * Usage: npm run smg:reauth
  */
 import { chromium } from 'playwright';
-import { existsSync } from 'fs';
+import { existsSync, copyFileSync, readFileSync } from 'fs';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
@@ -90,8 +90,10 @@ async function reauth() {
     await page.waitForTimeout(3000);
 
     await context.storageState({ path: SMG_SESSION_FILE });
-    console.log('\n✅ SMG session saved - cron will now work');
-    
+    // Also copy to /tmp path used by smg-browser.ts
+    copyFileSync(SMG_SESSION_FILE, '/tmp/smg-session.json');
+    console.log('✅ Session copied to /tmp/smg-session.json');
+
     // Update Supabase scraper status
     try {
       const supabase = createClient(
@@ -104,6 +106,12 @@ async function reauth() {
         last_error_message: null,
         updated_at: new Date().toISOString()
       }).eq('id', 'smg');
+      // Also save session to Supabase so Railway gets fresh session too
+      const sessionData = readFileSync(SMG_SESSION_FILE, 'utf-8');
+      await supabase.from('settings').upsert({
+        key: 'smg_session_state',
+        value: sessionData,
+      }, { onConflict: 'key' });
       console.log('✅ Scraper status cleared in Supabase');
     } catch (statusError) {
       console.error('Failed to update scraper status:', statusError);
