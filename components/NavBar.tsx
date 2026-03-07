@@ -124,14 +124,9 @@ export default function NavBar({ rightContent }: NavBarProps) {
             justifyContent: 'center', fontSize: 18
           }}>🍕</div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 14,
-              letterSpacing: '-0.02em' }}>Papa Johns</div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)',
-              letterSpacing: '0.05em', textTransform: 'uppercase' }}
-              className="nav-subtitle"
-            >
-              Ops Intelligence
-            </div>
+            <div style={{ fontWeight: 800, fontSize: 18, color: '#fff', letterSpacing: '-0.02em' }}>OpsIntel</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#e8441a', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Papa Johns</div>
+            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.05em' }}>Powered by Agentic Memory</div>
           </div>
         </div>
 
@@ -171,7 +166,7 @@ export default function NavBar({ rightContent }: NavBarProps) {
           }}
         >
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            Papa Johns  ›  {activeTabLabel}
+            OpsIntel  ›  {activeTabLabel}
           </div>
           <button
             type="button"

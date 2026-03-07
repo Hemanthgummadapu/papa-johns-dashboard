@@ -62,6 +62,27 @@ function normalizeStoreId(storeId: string): string {
   return Number.isNaN(n) ? storeId : String(n)
 }
 
+const LockIcon = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 4, flexShrink: 0 }}>
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+)
+
+const LockIconSmall = ({ size = 14, color = 'rgba(255,255,255,0.2)' }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+)
+
+const EnvelopeIcon = ({ color = '#e8441a', size = 14 }: { color?: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 6, flexShrink: 0 }}>
+    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+    <polyline points="22,6 12,13 2,6" />
+  </svg>
+)
+
 export default function SMGDashboardEmbed() {
   const [data, setData] = useState<SMGScore[]>([])
   const [lastScraped, setLastScraped] = useState<string | null>(null)
@@ -330,7 +351,7 @@ export default function SMGDashboardEmbed() {
               style={{
                 background: '#13151c',
                 border: '1px solid rgba(255,255,255,0.07)',
-                borderRadius: 12,
+                borderRadius: '12px 12px 8px 8px',
                 padding: 16,
                 position: 'relative',
                 overflow: 'hidden',
@@ -370,22 +391,33 @@ export default function SMGDashboardEmbed() {
                     {store.scraped_at ? new Date(store.scraped_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'}
                   </div>
                 </div>
-                <div
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSelectedStore(store.store_id)
+                    setShowStoreModal(true)
+                  }}
                   style={{
-                    padding: '2px 8px',
-                    borderRadius: 5,
-                    background: storeColor + '22',
-                    border: '1px solid ' + storeColor + '44',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: storeColor,
+                    padding: '6px 13px',
+                    borderRadius: 20,
+                    fontSize: 13,
+                    fontWeight: 500,
+                    background: 'rgba(255,255,255,0.06)',
+                    color: 'rgba(255,255,255,0.6)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s',
                   }}
                 >
-                  {storeKey}
-                </div>
+                  View →
+                </button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 14 }} className="guest-metric-grid">
+              {/* Section 1 — SMG Score Metrics (existing) */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }} className="guest-metric-grid">
                 {/* OSAT */}
                 <div style={{ background: '#0e1018', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 7, padding: '10px 12px' }}>
                   <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>OSAT</div>
@@ -429,6 +461,69 @@ export default function SMGDashboardEmbed() {
                     {tasteBadge.text} vs PJ
                   </div>
                 </div>
+              </div>
+              </div>
+
+              {/* Section 2 — Case Intelligence Row */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, textAlign: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>CASES</div>
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 18 }}>
+                    <LockIconSmall size={14} color="rgba(255,255,255,0.2)" />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>AVG RESOLVE</div>
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 18 }}>
+                    <LockIconSmall size={14} color="rgba(255,255,255,0.2)" />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>ESCALATED</div>
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 18 }}>
+                    <LockIconSmall size={14} color="rgba(255,255,255,0.2)" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3 — Locked feature pills */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                <span style={{ background: 'rgba(255,165,0,0.08)', border: '1px solid rgba(255,165,0,0.2)', borderRadius: 20, padding: '4px 10px', fontSize: 10, color: 'rgba(255,165,0,0.6)', display: 'inline-flex', alignItems: 'center' }}>
+                  🔒 Auto-Escalation
+                </span>
+                <span style={{ background: 'rgba(255,165,0,0.08)', border: '1px solid rgba(255,165,0,0.2)', borderRadius: 20, padding: '4px 10px', fontSize: 10, color: 'rgba(255,165,0,0.6)', display: 'inline-flex', alignItems: 'center' }}>
+                  🔒 GM Alerts
+                </span>
+                <span style={{ background: 'rgba(255,165,0,0.08)', border: '1px solid rgba(255,165,0,0.2)', borderRadius: 20, padding: '4px 10px', fontSize: 10, color: 'rgba(255,165,0,0.6)', display: 'inline-flex', alignItems: 'center' }}>
+                  🔒 Resolution Tracking
+                </span>
+              </div>
+
+              {/* Section 4 — Alert notification bar */}
+              <div
+                style={{
+                  marginTop: 12,
+                  marginLeft: -16,
+                  marginRight: -16,
+                  marginBottom: -16,
+                  padding: '8px 14px',
+                  background: 'rgba(255,255,255,0.03)',
+                  borderTop: '1px solid rgba(255,255,255,0.06)',
+                  borderRadius: '0 0 8px 8px',
+                  display: 'flex',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                  <EnvelopeIcon color="rgba(255,255,255,0.4)" size={14} />
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Alert sent to GM</span>
+                  <span style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', fontSize: 9, fontWeight: 600, borderRadius: 4, padding: '2px 6px', letterSpacing: '0.08em', border: '1px solid rgba(255,255,255,0.1)' }}>COMING SOON</span>
+                </div>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>
+                  {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
               </div>
             </div>
           )

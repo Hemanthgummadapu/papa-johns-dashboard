@@ -4,7 +4,7 @@ import ScraperStatusBar from '@/components/ScraperStatusBar'
 import { Providers } from '@/components/Providers'
 
 export const metadata: Metadata = {
-  title: 'Papa Johns Dashboard',
+  title: 'OpsIntel | Papa Johns',
   description: 'Multi-store restaurant reporting dashboard',
 }
 
