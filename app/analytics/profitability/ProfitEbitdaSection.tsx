@@ -196,7 +196,7 @@ export function ProfitEbitdaSection() {
   ]
 
   return (
-    <section>
+    <section className="ebitda-layout">
       <div
         style={{
           background: 'var(--bg-surface)',
@@ -383,6 +383,7 @@ export function ProfitEbitdaSection() {
             const compVs = vs(latest?.compPct ?? null, previous?.compPct ?? null, true)
             return (
               <div
+                className="ebitda-table-panel"
                 style={{
                   order: 1,
                   background: 'var(--bg-surface)',
@@ -613,6 +614,7 @@ export function ProfitEbitdaSection() {
             </div>
           ) : (
             <div
+              className="ebitda-chart-panel"
               style={{
                 order: 2,
                 background: 'var(--bg-surface)',
@@ -821,7 +823,7 @@ export function ProfitEbitdaSection() {
               >
                 ROADMAP
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} className="roadmap-grid">
                 {[
                   {
                     icon: TrendingUp,

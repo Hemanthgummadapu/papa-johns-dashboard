@@ -825,7 +825,7 @@ function KpiCard({
       <div style={topBarStyle} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
         <div>
-          <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+          <div className="store-card-title" style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', lineHeight: 1.2 }}>
             {store.name}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
@@ -893,41 +893,41 @@ function KpiCard({
       </div>
 
       {/* 2 rows × 3 cols — compact metric grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Net Sales</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(netSalesVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+      <div className="metric-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        <div className="metric-cell" style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
+          <div className="metric-label" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Net Sales</div>
+          <div className="metric-value" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(netSalesVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
           <div style={{ fontSize: 10.5, color: compPct != null ? (compPct < 0 ? '#ef4444' : compPct > 0 ? '#22c55e' : 'var(--text-primary)') : 'var(--text-tertiary)', marginTop: 2 }}>
             {compPct != null ? (compPct < 0 ? `↓ ${Math.abs(compPct).toFixed(1)}%` : compPct > 0 ? `↑ ${compPct.toFixed(1)}%` : '—') : '—'} vs last year
           </div>
         </div>
-        <div style={{ background: laborBg, borderRadius: 7, padding: '8px 10px' }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Labor %</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: laborColor, lineHeight: 1.1 }}>{laborPctVal != null ? `${Number(laborPctVal).toFixed(1)}%` : '—'}</div>
+        <div className="metric-cell" style={{ background: laborBg, borderRadius: 7, padding: '8px 10px' }}>
+          <div className="metric-label" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Labor %</div>
+          <div className="metric-value" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: laborColor, lineHeight: 1.1 }}>{laborPctVal != null ? `${Number(laborPctVal).toFixed(1)}%` : '—'}</div>
           <div style={{ fontSize: 10.5, color: laborColor, marginTop: 2 }}>Target: {laborTargetStore}%</div>
         </div>
-        <div style={{ background: flmBg, borderRadius: 7, padding: '8px 10px' }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>FLM %</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: flmColor, lineHeight: 1.1 }}>{flmPctVal != null ? `${Number(flmPctVal).toFixed(1)}%` : '—'}</div>
+        <div className="metric-cell" style={{ background: flmBg, borderRadius: 7, padding: '8px 10px' }}>
+          <div className="metric-label" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>FLM %</div>
+          <div className="metric-value" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: flmColor, lineHeight: 1.1 }}>{flmPctVal != null ? `${Number(flmPctVal).toFixed(1)}%` : '—'}</div>
           <div style={{ fontSize: 10.5, color: flmColor, marginTop: 2 }}>Target: &lt;46%</div>
         </div>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Food Cost</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: foodCostColor, lineHeight: 1.1 }}>
+        <div className="metric-cell" style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
+          <div className="metric-label" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Food Cost</div>
+          <div className="metric-value" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: foodCostColor, lineHeight: 1.1 }}>
             {foodCostUsdVal != null ? `$${Number(foodCostUsdVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : foodCostPctVal != null ? `${Number(foodCostPctVal).toFixed(1)}%` : '—'}
           </div>
           <div style={{ fontSize: 10.5, color: foodCostColor, marginTop: 2 }}>{foodCostPctVal != null ? `${Number(foodCostPctVal).toFixed(1)}%` : '—'}</div>
         </div>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Aggregator</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>
+        <div className="metric-cell" style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
+          <div className="metric-label" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Aggregator</div>
+          <div className="metric-value" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>
             ${Number(cubeStore ? (aggregatorVal ?? 0) : (Number(dddVal) + Number(aggregatorVal))).toLocaleString('en-US', { maximumFractionDigits: 0 })}
           </div>
           <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>DD + UE + GH</div>
         </div>
-        <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>DoorDash</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(dddVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+        <div className="metric-cell" style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
+          <div className="metric-label" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>DoorDash</div>
+          <div className="metric-value" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(dddVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
           <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>—</div>
         </div>
       </div>
@@ -2728,6 +2728,7 @@ export default function DashboardPage() {
         if (alerts.length === 0) return null
         return (
           <div
+            className="alert-banner"
             style={{
               background: 'rgba(239,68,68,0.08)',
               borderBottom: '1px solid rgba(239,68,68,0.2)',
@@ -2819,7 +2820,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div style={{ maxWidth: 1440, margin: '0 auto', padding: '20px 28px 40px' }}>
+      <div className="dashboard-page" style={{ maxWidth: 1440, margin: '0 auto', padding: '20px 28px 40px' }}>
         {loading && (
           <div className="fade-in" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20 }}>
             <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 8, color: 'var(--text-primary)' }}>Loading reports…</div>
@@ -3441,6 +3442,7 @@ export default function DashboardPage() {
               return (
                 <>
                   <div
+                    className="forecast-summary"
                     style={{
                       background: 'var(--bg-surface)',
                       border: '1px solid var(--border-subtle)',
@@ -3458,7 +3460,8 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                  <div className="forecast-table-wrapper">
+                  <div className="forecast-cards-grid forecast-table" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
                     {storeResults.map((r) => {
                       const storeIdx = parseInt(r.storeNum, 10) % STORE_COLORS.length
                       const storeColor = STORE_COLORS[storeIdx]
@@ -3604,6 +3607,7 @@ export default function DashboardPage() {
                         </div>
                       )
                     })}
+                  </div>
                   </div>
                 </>
               )
@@ -4016,6 +4020,7 @@ export default function DashboardPage() {
 
             {!liveLoading && liveData.length > 0 && (
               <div
+                className="live-cards-grid"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(3, 1fr)',
@@ -4310,6 +4315,7 @@ export default function DashboardPage() {
             onClick={() => setShowStoreModal(false)}
           >
             <div
+              className="detail-modal"
               style={{
                 background: '#13151c',
                 borderRadius: 16,
@@ -4435,7 +4441,7 @@ export default function DashboardPage() {
 
         {/* TRENDS TAB */}
         {!loading && activeTab === 'trends' && (
-          <div className="fade-in">
+          <div className="fade-in trends-chart-container">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <div>
                 <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>📈 Trends Analysis</div>
@@ -4763,6 +4769,7 @@ export default function DashboardPage() {
             {/* KPI Summary Row — 6 cells (mockup); skeleton when cube and no data */}
             {activeTab === 'dashboard' && dataSource === 'cube' && !cubeData?.length && (
               <div
+                className="kpi-summary-row"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(6, 1fr)',
@@ -4784,7 +4791,7 @@ export default function DashboardPage() {
             )}
             {kpiSummary && (
               <div
-                className="fade-in"
+                className="fade-in kpi-summary-row"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(6, 1fr)',
@@ -4867,6 +4874,7 @@ export default function DashboardPage() {
 
             {/* Single merged controls bar */}
             <div
+              className="controls-bar"
               style={{
                 background: 'var(--bg-surface)',
                 border: '1px solid var(--border-subtle)',
@@ -4922,6 +4930,7 @@ export default function DashboardPage() {
                       {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((p) => (
                         <button
                           key={p}
+                          className="period-btn"
                           onClick={() => {
                             const newDate = p === 'daily' ? getYesterdayDate() : p === 'weekly' ? getDefaultWeek() : p === 'monthly' ? getDefaultMonth() : String(new Date().getFullYear())
                             setCubePeriod(p)
@@ -5018,6 +5027,7 @@ export default function DashboardPage() {
                       </div>
                     ) : (
                       <input
+                        className="date-input"
                         type={cubePeriod === 'daily' ? 'date' : 'month'}
                         value={cubeDate}
                         onChange={(e) => {
@@ -5039,6 +5049,7 @@ export default function DashboardPage() {
                     <button
                       onClick={() => void loadCubeData()}
                       disabled={cubeLoading}
+                      className="load-btn"
                       style={{
                       padding: '6px 14px',
                       borderRadius: 6,
@@ -5097,7 +5108,7 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                 <div
-                  className="fade-in"
+                  className="fade-in store-cards-grid"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(3, 1fr)',
@@ -5247,7 +5258,7 @@ export default function DashboardPage() {
                     )
                   }
                   return (
-                    <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr', gap: 12, marginTop: 16 }}>
+                    <div className="fade-in charts-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr', gap: 12, marginTop: 16 }}>
                       <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 16, minHeight: 220 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 14 }}>📊 {trendChartTitle}</div>
                         {trendLoading ? (

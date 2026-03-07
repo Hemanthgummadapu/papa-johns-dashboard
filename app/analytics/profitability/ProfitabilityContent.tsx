@@ -664,6 +664,7 @@ export function ProfitabilityContent() {
     <Main style={{ padding: '24px 28px', maxWidth: 1440, margin: '0 auto' }}>
         {/* Store context bar */}
         <div
+          className="analytics-context-bar"
           style={{
             background: 'var(--bg-surface)',
             border: '1px solid var(--border-subtle)',
@@ -691,6 +692,7 @@ export function ProfitabilityContent() {
           <select
             value={selectedStore}
             onChange={(e) => setSelectedStore(e.target.value as typeof selectedStore)}
+            className="analytics-input"
             style={{
               fontSize: 12,
               padding: '4px 10px',
@@ -714,6 +716,7 @@ export function ProfitabilityContent() {
 
         {/* Sub-tab strip */}
         <div
+          className="analytics-subtabs"
           style={{
             position: 'sticky',
             top: 56,
@@ -757,9 +760,10 @@ export function ProfitabilityContent() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {analyticsTab === 'aggregator' && (
           <section>
-            <div className="grid gap-5 lg:grid-cols-2" style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20 }}>
+            <div className="panel-row grid gap-5 lg:grid-cols-2" style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20 }}>
               {/* Inputs panel */}
               <div
+                className="panel-half"
                 style={{
                   background: 'var(--bg-surface)',
                   border: '1px solid var(--border-subtle)',
@@ -928,6 +932,7 @@ export function ProfitabilityContent() {
 
               {/* Outputs */}
               <div
+                className="panel-half"
                 style={{
                   background: 'var(--bg-surface)',
                   border: '1px solid var(--border-subtle)',
@@ -943,7 +948,8 @@ export function ProfitabilityContent() {
                   {' · '}
                   Customer pays: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)' }}>{formatCurrency(ddResult.customerPays)}</span>
                 </div>
-                <div style={{ display: 'flex', gap: 0 }}>
+                <div className="aggregator-table-wrapper">
+                <div className="aggregator-platform-tabs aggregator-table" style={{ display: 'flex', gap: 0 }}>
                   {/* DoorDash card */}
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -1344,6 +1350,7 @@ export function ProfitabilityContent() {
                     </p>
                   </div>
                 </div>
+                </div>
               </div>
             </div>
           </section>
@@ -1353,9 +1360,10 @@ export function ProfitabilityContent() {
           <>
           {/* Tool 2 — Promo Simulator */}
           <section>
-            <div className="grid gap-6 lg:grid-cols-2" style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20 }}>
+            <div className="promo-simulator-layout grid gap-6 lg:grid-cols-2" style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20 }}>
               {/* Inputs */}
               <div
+                className="promo-input-panel promo-input-grid"
                 style={{
                   background: 'var(--bg-surface)',
                   border: '1px solid var(--border-subtle)',
@@ -1852,7 +1860,7 @@ export function ProfitabilityContent() {
           </section>
 
           {/* All Store Promo Impact Grid */}
-          <section style={{ marginTop: 32 }}>
+          <section className="promo-output-panel" style={{ marginTop: 32 }}>
             <div style={{ marginBottom: 20 }}>
               <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
                 All Store Impact — {currentPromoPresetName} applied to all stores
@@ -1862,7 +1870,7 @@ export function ProfitabilityContent() {
               </p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+            <div className="aggregator-cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
               {STORE_GRID_IDS.map((storeId) => {
                 const data = cubeStoreGridData[storeId]
                 const tier = STORE_TIER[storeId] ?? 'T2'
@@ -2124,7 +2132,7 @@ export function ProfitabilityContent() {
             <p style={{ marginBottom: 20, fontSize: 11, color: 'var(--text-tertiary)' }}>
               {IDEAL_FOOD_COST_P3_2026.period} | Cheese Case: {formatCurrency(IDEAL_FOOD_COST_P3_2026.cheeseCasePrice)}
             </p>
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2" style={{ gap: 20 }}>
+            <div className="food-cost-layout grid grid-cols-1 gap-6 lg:grid-cols-2" style={{ gap: 20 }}>
               <div
                 style={{
                   background: 'var(--bg-surface)',

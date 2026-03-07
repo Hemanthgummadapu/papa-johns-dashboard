@@ -248,7 +248,7 @@ export default function SMGDashboardEmbed() {
   return (
     <div style={{ position: 'relative' }}>
       {/* Slim header row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div className="guest-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>Guest Experience</div>
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>SMG Guest Experience scores and case management</div>
@@ -297,6 +297,7 @@ export default function SMGDashboardEmbed() {
       </div>
       {/* GRID VIEW */}
       <div
+        className="guest-cards-grid"
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
@@ -384,7 +385,7 @@ export default function SMGDashboardEmbed() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 14 }} className="guest-metric-grid">
                 {/* OSAT */}
                 <div style={{ background: '#0e1018', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 7, padding: '10px 12px' }}>
                   <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>OSAT</div>

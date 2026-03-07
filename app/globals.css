@@ -148,6 +148,15 @@ body {
   50% { opacity: 0.4; }
 }
 
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Hide mobile nav elements on desktop */
+.mobile-nav-bar { display: none; }
+.mobile-menu-trigger { display: none; }
+
 .live-card {
   background: #161822 !important;
 }
@@ -156,4 +165,300 @@ body {
   background: #0e1018 !important;
 }
 
+/* ===== MOBILE RESPONSIVE ===== */
+@media (max-width: 768px) {
+
+  /* NAV - hide desktop tabs, show mobile bar + hamburger */
+  .desktop-nav-tabs { display: none !important; }
+  .mobile-nav-bar { display: flex !important; }
+  .mobile-menu-trigger { display: flex !important; }
+
+  nav, .nav-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+    padding: 0 12px;
+  }
+  nav::-webkit-scrollbar { display: none; }
+
+  /* CONTROLS BAR - stack store chips */
+  /* Store chips wrap instead of overflow */
+  .controls-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 12px;
+  }
+
+  /* STORE CHIPS - smaller on mobile */
+  .store-chip {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+
+  /* KPI SUMMARY ROW - 2 cols on mobile */
+  .kpi-summary-row {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+    padding: 0 12px !important;
+  }
+
+  /* STORE CARDS GRID - 1 col on mobile */
+  .store-cards-grid {
+    grid-template-columns: 1fr !important;
+    padding: 0 12px !important;
+    gap: 12px !important;
+  }
+
+  /* METRIC GRID inside store card - keep 3 col but smaller */
+  .metric-grid {
+    gap: 6px !important;
+  }
+  .metric-cell {
+    padding: 8px !important;
+  }
+  .metric-value {
+    font-size: 15px !important;
+  }
+  .metric-label {
+    font-size: 8px !important;
+  }
+
+  /* BOTTOM CHARTS ROW - stack vertically */
+  .charts-row {
+    grid-template-columns: 1fr !important;
+    padding: 0 12px !important;
+    gap: 12px !important;
+  }
+
+  /* LIVE TAB cards - 1 col */
+  .live-cards-grid {
+    grid-template-columns: 1fr !important;
+    padding: 0 12px !important;
+  }
+
+  /* TRENDS PAGE chart */
+  .trends-chart-container {
+    padding: 0 12px !important;
+  }
+
+  /* ALERT BANNER - scroll horizontally */
+  .alert-banner {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    font-size: 11px;
+  }
+
+  /* PAGE PADDING */
+  .dashboard-page {
+    padding: 0 !important;
+  }
+
+  /* MODAL - full screen on mobile */
+  .detail-modal {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* NAVBAR logo text - shorter */
+  .nav-subtitle {
+    display: none;
+  }
+
+  /* Period buttons - smaller */
+  .period-btn {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+  }
+
+  /* Load button - full width on mobile */
+  .load-btn {
+    width: 100% !important;
+    margin-top: 6px !important;
+  }
+
+  /* Date input - full width */
+  .date-input {
+    width: 100% !important;
+  }
+
+  /* Typography scaling */
+  .store-card-title {
+    font-size: 14px !important;
+  }
+
+  /* Hide less important columns in tables */
+  .hide-mobile {
+    display: none !important;
+  }
+
+  /* ===== GUEST TAB ===== */
+  /* Guest store cards - 1 col */
+  .guest-cards-grid {
+    grid-template-columns: 1fr !important;
+    padding: 0 12px !important;
+    gap: 12px !important;
+  }
+
+  /* Guest 2x2 metric grid - keep 2 col */
+  .guest-metric-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  /* Guest header bar - stack */
+  .guest-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+
+  /* ===== FORECAST TAB ===== */
+  /* Forecast store cards - 1 col */
+  .forecast-cards-grid {
+    grid-template-columns: 1fr !important;
+    padding: 0 12px !important;
+    gap: 12px !important;
+  }
+
+  /* Forecast summary banner - stack */
+  .forecast-summary {
+    flex-direction: column !important;
+    gap: 8px !important;
+    padding: 12px !important;
+  }
+
+  /* Forecast table - horizontal scroll */
+  .forecast-table-wrapper {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .forecast-table {
+    min-width: 500px !important;
+  }
+
+  /* ===== ANALYTICS TAB ===== */
+  /* Sub-tab strip - horizontal scroll */
+  .analytics-subtabs {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    white-space: nowrap !important;
+    padding: 0 12px !important;
+  }
+  .analytics-subtabs::-webkit-scrollbar { display: none; }
+
+  /* Aggregator section - stack cards */
+  .aggregator-cards-grid {
+    grid-template-columns: 1fr !important;
+    padding: 0 12px !important;
+    gap: 12px !important;
+  }
+
+  /* Aggregator platform tabs - scroll */
+  .aggregator-platform-tabs {
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    scrollbar-width: none !important;
+  }
+
+  /* Aggregator table - horizontal scroll */
+  .aggregator-table-wrapper {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .aggregator-table {
+    min-width: 600px !important;
+  }
+
+  /* Promo simulator - stack inputs and output */
+  .promo-simulator-layout {
+    flex-direction: column !important;
+    gap: 16px !important;
+    padding: 0 12px !important;
+  }
+
+  .promo-input-panel,
+  .promo-output-panel {
+    width: 100% !important;
+    min-width: unset !important;
+  }
+
+  /* Promo input grid - 1 col */
+  .promo-input-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Profit EBITDA section - stack */
+  .ebitda-layout {
+    flex-direction: column !important;
+    padding: 0 12px !important;
+  }
+
+  .ebitda-chart-panel,
+  .ebitda-table-panel {
+    width: 100% !important;
+  }
+
+  /* Food cost calculator - stack */
+  .food-cost-layout {
+    flex-direction: column !important;
+    padding: 0 12px !important;
+    gap: 12px !important;
+  }
+
+  /* Roadmap cards - 1 col */
+  .roadmap-grid {
+    grid-template-columns: 1fr !important;
+    padding: 0 12px !important;
+  }
+
+  /* Analytics store context bar - wrap */
+  .analytics-context-bar {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    padding: 8px 12px !important;
+    font-size: 11px !important;
+  }
+
+  /* Input fields full width */
+  .analytics-input {
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Any side by side panels - stack */
+  .panel-row {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .panel-half,
+  .panel-left,
+  .panel-right {
+    width: 100% !important;
+    min-width: unset !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Extra small phones */
+  .kpi-summary-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .metric-value {
+    font-size: 13px !important;
+  }
+
+  /* Nav bar - icon only mode */
+  .nav-tab-label {
+    font-size: 10px !important;
+  }
+}
 
