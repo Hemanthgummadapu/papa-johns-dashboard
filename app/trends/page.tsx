@@ -1,7 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ComposedChart,
   Line,
@@ -13,8 +12,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts'
-import type { ReportPoint } from '@/lib/comparison'
-import ComparisonPanel from '@/components/ComparisonPanel'
+import NavBar from '@/components/NavBar'
 
 const STORE_LIST = ['2081', '2021', '2259', '2292', '2481', '3011']
 const STORE_COLORS: Record<string, string> = {
@@ -35,6 +33,31 @@ const METRICS = [
   { key: 'ubereats_sales', label: 'Aggregator (DD+UE+GH)', fmt: (v: number) => `$${v?.toLocaleString()}`, color: '#06b6d4', unit: '$' as const, tooltip: 'Combined DoorDash + UberEats + GrubHub from cube [TY Aggregator Delivery Net Sales USD]. May differ slightly from POS due to timing.' },
 ] as const
 type MetricKey = (typeof METRICS)[number]['key']
+
+/** For labor/food cost/FLM, lower is better (decrease = good). For sales, higher is better. */
+function isMetricImprovement(metricKeyOrLabel: string, change: number): boolean {
+  if (['labor_pct', 'food_cost_pct', 'flm_pct', 'Labor %', 'Food Cost %', 'FLM %'].includes(metricKeyOrLabel)) {
+    return change < 0 // decrease is good
+  }
+  return change > 0 // sales/revenue: increase is good
+}
+
+/** True when lower values are better (used for best/worst and vs peak). */
+function isLowerBetterMetric(metricKey: string): boolean {
+  return ['labor_pct', 'food_cost_pct', 'flm_pct'].includes(metricKey)
+}
+
+const METRIC_TARGETS: Partial<Record<MetricKey, number>> = {
+  flm_pct: 55,
+  food_cost_pct: 25,
+  labor_pct: 28.68,
+}
+
+type ChartDataPoint = Record<string, number | string>
+
+type TrendsTab = 'chart' | 'specials'
+
+type TooltipPayloadItem = { dataKey: string; value: number; color: string }
 
 type CubeStoreRow = {
   storeNumber: string
@@ -67,6 +90,23 @@ type SpecialHistoryRow = {
   created_at: string
 }
 
+type DailyReportRaw = {
+  report_date: string
+  net_sales?: number | null
+  labor_pct?: number | null
+  food_cost_pct?: number | null
+  flm_pct?: number | null
+  cash_short?: number | null
+  doordash_sales?: number | null
+  ubereats_sales?: number | null
+  stores?: { store_number?: string | number; number?: string } | null
+  store_id?: string
+}
+
+type ImpactBySpecial = Record<string, SpecialImpact>
+type VsLastYearLoadingBySpecial = Record<string, boolean>
+type HistoryBySpecial = Record<string, SpecialHistoryRow[]>
+
 type ComparisonMetrics = {
   daysRunning: number
   netSalesChange: number
@@ -87,7 +127,7 @@ type SpecialImpact = ComparisonMetrics & {
 }
 
 function calcChange(before: number, after: number): number {
-  return before > 0 ? ((after - before) / before) * 100 : 0
+  return (before > 0 ? ((after - before) / before) * 100 : 0)
 }
 
 function formatChange(value: number, isPercentagePoints: boolean): string {
@@ -157,6 +197,12 @@ function getDefaultWeek(): string {
 function getDefaultMonth(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function getYesterdayDate(): string {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  return d.toISOString().split('T')[0]
 }
 
 /** Last fully completed month (excludes current incomplete month). */
@@ -427,19 +473,19 @@ export default function TrendsPage() {
   const [metric, setMetric] = useState<MetricKey>('net_sales')
   const [storesSelected, setStoresSelected] = useState<string[]>(STORE_LIST)
   const [period, setPeriod] = useState<'3M' | '6M' | '1Y' | '2Y' | '3Y'>('6M')
-  const [chartData, setChartData] = useState<Array<Record<string, number | string>>>([])
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([])
   const [loading, setLoading] = useState(false)
-  const [showCompare, setShowCompare] = useState(false)
-  const [compareReports, setCompareReports] = useState<Record<string, ReportPoint[]>>({})
-  const [compareReportsLoading, setCompareReportsLoading] = useState(false)
   const [specials, setSpecials] = useState<Special[]>([])
   const [specialsFilter, setSpecialsFilter] = useState<'active' | 'history' | 'all'>('active')
   const [addSpecialOpen, setAddSpecialOpen] = useState(false)
   const [storeFilter, setStoreFilter] = useState<string>('all')
-  const [impactBySpecial, setImpactBySpecial] = useState<Record<string, SpecialImpact>>({})
-  const [vsLastYearLoadingBySpecial, setVsLastYearLoadingBySpecial] = useState<Record<string, boolean>>({})
-  const [historyBySpecial, setHistoryBySpecial] = useState<Record<string, SpecialHistoryRow[]>>({})
+  const [impactBySpecial, setImpactBySpecial] = useState<ImpactBySpecial>({})
+  const [vsLastYearLoadingBySpecial, setVsLastYearLoadingBySpecial] = useState<VsLastYearLoadingBySpecial>({})
+  const [historyBySpecial, setHistoryBySpecial] = useState<HistoryBySpecial>({})
   const [showHistoryId, setShowHistoryId] = useState<string | null>(null)
+  const [trendsTab, setTrendsTab] = useState<TrendsTab>('chart')
+  const [showVsLY, setShowVsLY] = useState(false)
+  const [lyChartData, setLyChartData] = useState<ChartDataPoint[]>([])
 
   const periodConfig = {
     '3M': { count: 12, period: 'weekly' as const, label: '12 weeks' },
@@ -463,7 +509,6 @@ export default function TrendsPage() {
 
   const loadChart = useCallback(async () => {
     const config = periodConfig[period]
-    // Exclude current incomplete period: use last complete month/week so chart ends at full data.
     const dates =
       config.period === 'weekly'
         ? getPrevWeeks(getLastCompleteWeek(), config.count)
@@ -477,9 +522,9 @@ export default function TrendsPage() {
           )
         )
       )
-      const data: Array<Record<string, number | string>> = dates.map((dateStr, i) => {
+      const data: ChartDataPoint[] = dates.map((dateStr, i) => {
         const storesList: CubeStoreRow[] = results[i]?.stores ?? []
-        const point: Record<string, number | string> = {
+        const point: ChartDataPoint = {
           date: dateStr,
           label: config.period === 'weekly' ? `W${i + 1}` : formatMonthLabel(dateStr),
         }
@@ -499,224 +544,231 @@ export default function TrendsPage() {
     loadChart()
   }, [loadChart])
 
-  // When Compare is on, fetch daily reports for ComparisonPanel
+  // When showVsLY is true, fetch same period last year for each date in the chart
   useEffect(() => {
-    if (!showCompare || storesSelected.length === 0) {
-      setCompareReports({})
+    if (!showVsLY || chartData.length === 0 || storesSelected.length === 0) {
+      setLyChartData([])
       return
     }
-    setCompareReportsLoading(true)
-    fetch(`/api/daily-reports?days=90`, { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((raw: Array<{
-        report_date: string
-        net_sales?: number | null
-        labor_pct?: number | null
-        food_cost_pct?: number | null
-        flm_pct?: number | null
-        cash_short?: number | null
-        doordash_sales?: number | null
-        ubereats_sales?: number | null
-        stores?: { store_number?: string | number; number?: string } | null
-        store_id?: string
-      }>) => {
-        const byStore: Record<string, ReportPoint[]> = {}
-        const storeNumKey = (r: (typeof raw)[0]) => {
-          const s = r.stores
-          if (s && (s.store_number != null || (s as { number?: string }).number != null))
-            return String((s as { store_number?: string | number }).store_number ?? (s as { number?: string }).number)
-          return r.store_id ? String(r.store_id) : ''
-        }
-        raw.forEach((r) => {
-          const num = storeNumKey(r)
-          if (!num) return
-          if (!byStore[num]) byStore[num] = []
-          byStore[num].push({
-            label: r.report_date,
-            report_date: r.report_date,
-            net_sales: r.net_sales ?? 0,
-            labor_pct: r.labor_pct ?? 0,
-            food_cost_pct: r.food_cost_pct ?? 0,
-            flm_pct: r.flm_pct ?? 0,
-            cash_short: r.cash_short ?? 0,
-            doordash_sales: r.doordash_sales ?? 0,
-            ubereats_sales: r.ubereats_sales ?? 0,
-          })
+    const config = periodConfig[period]
+    const dates =
+      config.period === 'weekly'
+        ? getPrevWeeks(getLastCompleteWeek(), config.count)
+        : getPrevMonths(getLastCompleteMonth(), config.count)
+    const toLastYear = (d: string) => {
+      if (d.includes('-W')) {
+        const [y, w] = d.split('-W')
+        return `${parseInt(y, 10) - 1}-W${w}`
+      }
+      const [y, m] = d.split('-')
+      return `${parseInt(y, 10) - 1}-${m}`
+    }
+    const lyDates = dates.map(toLastYear)
+    Promise.all(
+      lyDates.map((d) =>
+        fetch(`/api/cube?date=${encodeURIComponent(d)}&period=${config.period}`, { cache: 'no-store' }).then((r) => r.json())
+      )
+    ).then((results) => {
+      const data: ChartDataPoint[] = dates.map((dateStr, i) => {
+        const storesList: CubeStoreRow[] = results[i]?.stores ?? []
+        const point: ChartDataPoint = { date: dateStr, label: config.period === 'weekly' ? `W${i + 1}` : formatMonthLabel(dateStr) }
+        storesSelected.forEach((storeNum) => {
+          const s = storesList.find((x) => String(x.storeNumber) === storeNum)
+          point[`${storeNum}_ly`] = s ? getMetricFromStore(s, metric) : 0
         })
-        Object.keys(byStore).forEach((k) => {
-          byStore[k].sort((a, b) => (a.report_date > b.report_date ? 1 : -1))
-        })
-        setCompareReports(byStore)
+        return point
       })
-      .catch(() => setCompareReports({}))
-      .finally(() => setCompareReportsLoading(false))
-  }, [showCompare, storesSelected.length])
+      setLyChartData(data)
+    }).catch(() => setLyChartData([]))
+  }, [showVsLY, chartData.length, period, storesSelected, metric])
+
+  const mergedChartData = useMemo(() => {
+    if (!showVsLY || lyChartData.length !== chartData.length || lyChartData.length === 0) return chartData
+    return chartData.map((pt, i) => ({
+      ...pt,
+      ...Object.fromEntries(storesSelected.map((s) => [`${s}_ly`, Number(lyChartData[i]?.[`${s}_ly`]) || 0])),
+    }))
+  }, [chartData, lyChartData, showVsLY, storesSelected])
 
   const activeSpecials = specials.filter((s) => s.status === 'active')
   const activeCount = activeSpecials.length
 
   return (
-    <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)]">
-      {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-6">
-        <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--brand)] text-xs font-semibold text-white">
-              PJ
-            </div>
-            <div>
-              <div className="font-semibold text-[var(--text-primary)]">Papa Johns Ops</div>
-              <div className="text-[11px] text-[var(--text-tertiary)]">Trends & Specials</div>
-            </div>
-          </div>
-          <nav className="flex gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-1">
-            <Link
-              href="/dashboard"
-              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/trends"
-              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              Trends
-            </Link>
-            <Link
-              href="/analytics/profitability"
-              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              Analytics
-            </Link>
-            <Link
-              href="/audit"
-              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              Audit
-            </Link>
-            <Link
-              href="/ai"
-              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              ✦ AI
-            </Link>
-            <Link
-              href="/dashboard"
-              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              Live
-            </Link>
-            <Link
-              href="/dashboard"
-              className="rounded-md px-4 py-2 text-sm font-semibold text-[var(--text-tertiary)] transition hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              Guest Experience
-            </Link>
-          </nav>
-        </div>
-      </header>
+    <div
+      className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)]"
+    >
+      <NavBar />
 
-      <main className="mx-auto max-w-[1400px] px-6 py-8">
-        {/* Section 1 — Trends Chart */}
-        <section className="mb-12">
-          <div className="mb-4 flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              onClick={() => setShowCompare((p) => !p)}
+      {/* Single control bar — sticky below nav (only when Trends Chart tab is selected) */}
+      {trendsTab === 'chart' && (
+      <div
+        style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 10,
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+          position: 'sticky',
+          top: 56,
+          zIndex: 40,
+        }}
+      >
+        {/* Metric chips */}
+        {METRICS.map((m) => (
+          <button
+            key={m.key}
+            type="button"
+            onClick={() => setMetric(m.key)}
+            title={'tooltip' in m ? m.tooltip : undefined}
+            style={{
+              padding: '4px 11px',
+              borderRadius: 6,
+              border: metric === m.key ? 'none' : '1px solid var(--border-subtle)',
+              background: metric === m.key ? 'var(--brand)' : 'transparent',
+              color: metric === m.key ? '#fff' : 'var(--text-tertiary)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: "'Inter', sans-serif",
+            }}
+          >
+            {m.label}
+            {'tooltip' in m && m.tooltip && (
+              <span style={{ marginLeft: 4, cursor: 'help', opacity: 0.7 }} title={m.tooltip} aria-label="Info">ⓘ</span>
+            )}
+          </button>
+        ))}
+
+        <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 4px' }} />
+
+        {/* Store chips — colored border matching STORE_COLORS */}
+        {STORE_LIST.map((num) => {
+          const checked = storesSelected.includes(num)
+          const storeColor = STORE_COLORS[num] ?? '#888'
+          return (
+            <label
+              key={num}
               style={{
-                border: '1px solid var(--border-subtle)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+                padding: '3px 10px',
                 borderRadius: 6,
-                padding: '6px 14px',
+                border: `2px solid ${storeColor}`,
+                background: checked ? `${storeColor}20` : 'transparent',
+                color: checked ? storeColor : 'var(--text-tertiary)',
+                fontSize: 12,
+                fontWeight: 700,
+                fontFamily: "'Inter', sans-serif",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() =>
+                  setStoresSelected((prev) =>
+                    prev.includes(num) ? prev.filter((n) => n !== num) : [...prev, num]
+                  )
+                }
+                style={{ accentColor: 'var(--brand)', width: 14, height: 14 }}
+              />
+              {num}
+            </label>
+          )
+        })}
+
+        <div style={{ width: 1, height: 20, background: 'var(--border-subtle)', margin: '0 4px' }} />
+
+        {/* Period chips — pill style */}
+        <div style={{ display: 'flex', gap: 2 }}>
+          {(['3M', '6M', '1Y', '2Y', '3Y'] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPeriod(p)}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 5,
                 fontSize: 12,
                 fontWeight: 600,
-                background: showCompare ? 'var(--brand)' : 'transparent',
-                color: showCompare ? '#fff' : 'var(--text-tertiary)',
                 fontFamily: "'Inter', sans-serif",
+                background: period === p ? 'var(--brand)' : 'transparent',
+                color: period === p ? '#fff' : 'var(--text-tertiary)',
+                border: 'none',
                 cursor: 'pointer',
               }}
             >
-              ⇄ Compare
+              {p}
             </button>
-            <h2 className="text-lg font-bold text-[var(--text-primary)]">Trends Chart</h2>
-          </div>
-          <div className="mb-4 flex flex-wrap items-end gap-6">
-            <div>
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
-                Metric
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {METRICS.map((m) => (
-                  <button
-                    key={m.key}
-                    onClick={() => setMetric(m.key)}
-                    title={'tooltip' in m ? m.tooltip : undefined}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                      metric === m.key
-                        ? 'bg-[var(--brand)] text-white'
-                        : 'bg-[var(--bg-overlay)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
-                    }`}
-                  >
-                    {m.label}
-                    {'tooltip' in m && m.tooltip && (
-                      <span className="ml-1 cursor-help opacity-70" title={m.tooltip} aria-label="Info">ⓘ</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
-                Stores
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {STORE_LIST.map((num) => {
-                  const checked = storesSelected.includes(num)
-                  return (
-                    <label
-                      key={num}
-                      className={`flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
-                        checked
-                          ? 'border-[var(--store-1)] bg-[var(--brand-subtle)] text-[var(--text-primary)]'
-                          : 'border-[var(--border-default)] bg-[var(--bg-overlay)] text-[var(--text-tertiary)]'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setStoresSelected((prev) =>
-                            prev.includes(num) ? prev.filter((n) => n !== num) : [...prev, num]
-                          )
-                        }
-                        className="h-4 w-4 accent-[var(--brand)]"
-                      />
-                      {num}
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
-            <div>
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">
-                Period
-              </div>
-              <div className="flex gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-1">
-                {(['3M', '6M', '1Y', '2Y', '3Y'] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setPeriod(p)}
-                    className={`rounded-md px-4 py-2 text-sm font-semibold ${
-                      period === p ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          ))}
+        </div>
 
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
+        <button
+          type="button"
+          onClick={() => setShowVsLY((v) => !v)}
+          style={{
+            padding: '4px 12px',
+            borderRadius: 5,
+            fontSize: 12,
+            fontWeight: 600,
+            border: '1px solid',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            background: showVsLY ? 'rgba(232,68,26,0.15)' : 'transparent',
+            borderColor: showVsLY ? 'var(--brand)' : 'var(--border-subtle)',
+            color: showVsLY ? 'var(--brand)' : 'var(--text-tertiary)',
+          }}
+        >
+          ⇄ vs LY
+        </button>
+      </div>
+      )}
+
+      {/* Sub-tab strip */}
+      <div
+        style={{
+          background: 'var(--bg-surface)',
+          borderBottom: '1px solid var(--border-subtle)',
+          padding: '0 28px',
+          display: 'flex',
+          gap: 0,
+        }}
+      >
+        {[
+          { key: 'chart' as const, label: 'Trends Chart' },
+          { key: 'specials' as const, label: 'Specials Tracker' },
+        ].map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTrendsTab(key)}
+            style={{
+              padding: '10px 16px',
+              fontSize: 13,
+              fontWeight: 500,
+              fontFamily: "'Inter', sans-serif",
+              color: trendsTab === key ? 'var(--text-primary)' : 'var(--text-tertiary)',
+              borderBottom: trendsTab === key ? '2px solid var(--brand)' : '2px solid transparent',
+              background: 'none',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content area */}
+      <div style={{ padding: '24px 28px', maxWidth: 1440, margin: '0 auto' }}>
+        {/* Tab: Trends Chart */}
+        {trendsTab === 'chart' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="border border-[var(--border-subtle)] p-4" style={{ background: 'var(--bg-card, #1a1d27)', padding: 20, borderRadius: 10 }}>
             {loading ? (
               <div className="flex h-[350px] flex-col items-center justify-center gap-3 text-[var(--text-secondary)]">
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--border-default)] border-t-[var(--brand)]" />
@@ -737,32 +789,47 @@ export default function TrendsPage() {
                 No data. Select at least one store.
               </div>
             ) : (
+              <>
+                {showVsLY && (
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>——</span> Current period
+                    <span style={{ opacity: 0.4 }}>- - -</span> Same period last year
+                  </div>
+                )}
               <ResponsiveContainer width="100%" height={350}>
-                <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="1 3" stroke="var(--border-subtle)" />
+                <ComposedChart data={showVsLY && mergedChartData.length > 0 ? mergedChartData : chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="1 3" stroke="rgba(255,255,255,0.04)" />
                   <XAxis
                     dataKey="label"
-                    stroke="var(--text-tertiary)"
-                    tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }}
+                    stroke="rgba(255,255,255,0.35)"
+                    tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.35)' }}
                   />
                   <YAxis
-                    stroke="var(--text-tertiary)"
-                    tick={{ fontSize: 11, fill: 'var(--text-tertiary)' }}
+                    stroke="rgba(255,255,255,0.35)"
+                    tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.35)' }}
                     tickFormatter={(v) => METRICS.find((x) => x.key === metric)?.fmt(Number(v)) ?? String(v)}
                   />
                   <Tooltip
                     content={({ active, payload, label }) => {
                       if (!active || !payload?.length) return null
                       return (
-                        <div className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] p-3">
-                          <div className="mb-2 text-sm font-medium text-[var(--text-primary)]">{label}</div>
-                          {payload.map((p: { dataKey: string; value: number; color: string }) => (
+                        <div
+                          style={{
+                            background: '#1a1d27',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: 8,
+                            fontSize: 12,
+                            padding: 12,
+                          }}
+                        >
+                          <div className="mb-2 font-medium text-[var(--text-primary)]">{label}</div>
+                          {payload.map((p: TooltipPayloadItem) => (
                             <div key={p.dataKey} className="mb-1 flex items-center gap-2">
                               <div
                                 className="h-2 w-2 rounded-full"
                                 style={{ background: p.color }}
                               />
-                              <span className="text-[var(--text-secondary)]">Store {p.dataKey}:</span>
+                              <span className="text-[var(--text-secondary)]">Store {p.dataKey.replace(/_ly$/, '')}:</span>
                               <span className="font-semibold" style={{ color: p.color }}>
                                 {METRICS.find((m) => m.key === metric)?.fmt(p.value) ?? p.value}
                               </span>
@@ -772,7 +839,7 @@ export default function TrendsPage() {
                       )
                     }}
                   />
-                  <Legend formatter={(val) => `Store ${val}`} />
+                  <Legend formatter={(val) => `Store ${val}`} wrapperStyle={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }} />
                   {storesSelected.map((storeNum) => (
                     <Line
                       key={storeNum}
@@ -782,6 +849,20 @@ export default function TrendsPage() {
                       strokeWidth={2}
                       dot={false}
                       activeDot={{ r: 5 }}
+                    />
+                  ))}
+                  {showVsLY && mergedChartData.length > 0 && storesSelected.map((storeNum) => (
+                    <Line
+                      key={`${storeNum}_ly`}
+                      type="monotone"
+                      dataKey={`${storeNum}_ly`}
+                      stroke={STORE_COLORS[storeNum] ?? '#888'}
+                      strokeWidth={2}
+                      strokeOpacity={0.35}
+                      strokeDasharray="5 5"
+                      dot={false}
+                      activeDot={false}
+                      name={`Store ${storeNum} LY`}
                     />
                   ))}
                   {activeSpecials.map((special) => {
@@ -803,6 +884,7 @@ export default function TrendsPage() {
                   })}
                 </ComposedChart>
               </ResponsiveContainer>
+              </>
             )}
             {!loading && chartData.length > 0 && (() => {
               const config = periodConfig[period]
@@ -813,14 +895,13 @@ export default function TrendsPage() {
                   : `Data through ${formatMonthLabel(lastDate)} · Current month excluded`
                 : null
               return throughLabel ? (
-                <p className="mt-1 text-[10px] text-[var(--text-tertiary)]" style={{ marginBottom: 0 }}>
+                <p style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 8, marginBottom: 0, paddingLeft: 4 }}>
                   {throughLabel}
                 </p>
               ) : null
             })()}
           </div>
-
-          {/* Store Performance Scorecard — uses same chartData */}
+          {/* Store Performance cards + best/worst row — below chart when on chart tab */}
           {!loading && chartData.length > 0 && storesSelected.length > 0 && (() => {
             const selectedMetricLabel = METRICS.find((m) => m.key === metric)?.label ?? metric
             const formatMetricVal = (v: number) => METRICS.find((m) => m.key === metric)?.fmt(v) ?? String(v)
@@ -831,13 +912,17 @@ export default function TrendsPage() {
               '2Y': '2 years ago',
               '3Y': '3 years ago',
             }
-            const periodStartLabel = periodStartLabels[period]
-
+            const periodStartLabel = showVsLY ? 'vs same period LY' : periodStartLabels[period]
             const getLatest = (store: string) => Number(chartData[chartData.length - 1]?.[store]) || 0
-            const getStart = (store: string) => Number(chartData[0]?.[store]) || 0
+            const getStart = (store: string) => {
+              if (showVsLY && lyChartData.length > 0) {
+                return Number(lyChartData[lyChartData.length - 1]?.[`${store}_ly`]) || 0
+              }
+              return Number(chartData[0]?.[store]) || 0
+            }
             const getPeak = (store: string) =>
               chartData.length ? Math.max(...chartData.map((d) => Number(d[store]) || 0)) : 0
-
+            const lowerIsBetter = isLowerBetterMetric(metric)
             const storeStats = storesSelected.map((store) => {
               const latest = getLatest(store)
               const start = getStart(store)
@@ -846,160 +931,195 @@ export default function TrendsPage() {
               const fromPeak = peak !== 0 ? ((latest - peak) / peak) * 100 : 0
               return { store, latest, start, peak, change, fromPeak }
             })
-            const best = storeStats.length ? storeStats.reduce((a, b) => (a.change >= b.change ? a : b)) : null
-            const worst = storeStats.length ? storeStats.reduce((a, b) => (a.change <= b.change ? a : b)) : null
+            const best = storeStats.length
+              ? (lowerIsBetter
+                  ? storeStats.reduce((a, b) => (a.latest <= b.latest ? a : b))
+                  : storeStats.reduce((a, b) => (a.change >= b.change ? a : b)))
+              : null
+            const worst = storeStats.length
+              ? (lowerIsBetter
+                  ? storeStats.reduce((a, b) => (a.latest >= b.latest ? a : b))
+                  : storeStats.reduce((a, b) => (a.change <= b.change ? a : b)))
+              : null
             const avgChange = storeStats.length ? storeStats.reduce((s, x) => s + x.change, 0) / storeStats.length : 0
             const avgFromPeak = storeStats.length ? storeStats.reduce((s, x) => s + x.fromPeak, 0) / storeStats.length : 0
-
-            const progressColor = (ratio: number, store: string) => {
-              if (ratio >= 0.8) return STORE_COLORS[store] ?? '#888'
-              if (ratio >= 0.6) return '#eab308'
-              return '#ef4444'
-            }
-
+            const changeIsGood = (c: number) => isMetricImprovement(metric, c)
+            const fromPeakIsGood = (fp: number) => (lowerIsBetter ? fp < 0 : fp >= 0)
+            const targetVal = METRIC_TARGETS[metric]
+            const targetLabel =
+              metric === 'flm_pct' ? 'Target: <55%' : metric === 'food_cost_pct' ? 'Target: <25%' : metric === 'labor_pct' ? 'Target: <28.68%' : null
             return (
-              <div className="mt-4 mb-8">
-                <div className="mb-3 text-xs uppercase text-gray-400">
+              <div className="mb-8" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 4 }}>
                   Store Performance — {selectedMetricLabel} · {period}
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                   {storeStats.map(({ store, latest, start, peak, change, fromPeak }) => {
-                    const ratio = peak > 0 ? latest / peak : 1
-                    const barColor = progressColor(ratio, store)
+                    const changeGood = changeIsGood(change)
+                    const fromPeakGood = fromPeakIsGood(fromPeak)
+                    const meetsTarget = targetVal != null ? latest < targetVal : null
                     return (
-                      <div key={store} className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+                      <div
+                        key={store}
+                        style={{
+                          background: 'var(--bg-card, #1a1d27)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: 10,
+                          padding: 16,
+                        }}
+                      >
                         <div className="mb-3 flex items-center gap-2">
-                          <div
-                            className="h-2 w-2 rounded-full"
-                            style={{ background: STORE_COLORS[store] ?? '#888' }}
-                          />
-                          <span className="text-sm font-bold text-white">Store {store}</span>
+                          <div className="h-2 w-2 rounded-full" style={{ background: STORE_COLORS[store] ?? '#888' }} />
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Store {store}</span>
                         </div>
-                        <div className="mb-1 text-2xl font-bold text-white">
-                          {formatMetricVal(latest)}
-                        </div>
-                        <div
-                          className={`mb-2 text-sm font-bold ${change >= 0 ? 'text-green-400' : 'text-red-400'}`}
-                        >
-                          {change >= 0 ? '▲' : '▼'} {Math.abs(change).toFixed(1)}% since {periodStartLabel}
+                        <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{formatMetricVal(latest)}</div>
+                        {targetLabel != null && (
+                          <div className="mb-1" style={{ fontSize: 10, color: meetsTarget ? '#22c55e' : '#ef4444' }}>
+                            {targetLabel}
+                          </div>
+                        )}
+                        <div className="mb-2" style={{ fontSize: 12, fontWeight: 600, color: changeGood ? '#22c55e' : '#ef4444' }}>
+                          {change >= 0 ? '▲' : '▼'} {Math.abs(change).toFixed(1)}% {showVsLY ? '' : 'since '}{periodStartLabel}
                         </div>
                         <div className="mb-2">
-                          <div className="mb-1 flex justify-between text-xs text-gray-400">
+                          <div className="mb-1 flex justify-between" style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                             <span>vs Peak</span>
-                            <span className="text-red-400">{fromPeak.toFixed(1)}%</span>
+                            <span style={{ color: fromPeakGood ? '#22c55e' : '#ef4444' }}>{fromPeak.toFixed(1)}%</span>
                           </div>
-                          <div className="h-1.5 overflow-hidden rounded-full bg-gray-700">
+                          <div style={{ height: 3, borderRadius: 2, background: 'var(--border-subtle)', overflow: 'hidden' }}>
                             <div
-                              className="h-full rounded-full transition-all"
                               style={{
+                                height: '100%',
                                 width: `${Math.max(0, Math.min(100, peak > 0 ? (latest / peak) * 100 : 100))}%`,
-                                background: barColor,
+                                background: STORE_COLORS[store] ?? '#888',
+                                borderRadius: 2,
                               }}
                             />
                           </div>
                         </div>
-                        <div className="text-xs text-gray-500">
-                          Peak: {formatMetricVal(peak)}
-                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Peak: {formatMetricVal(peak)}</div>
                       </div>
                     )
                   })}
                 </div>
-                <div className="mt-3 flex flex-wrap gap-8 rounded-xl border border-gray-800 bg-gray-900 p-4">
+                <div
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 10,
+                    padding: '12px 20px',
+                    display: 'flex',
+                    gap: 40,
+                    flexWrap: 'wrap',
+                  }}
+                >
                   <div>
-                    <div className="text-xs uppercase text-gray-400">Best Performing</div>
-                    <div className="mt-1 font-bold text-white">
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Best Performing</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
                       {best ? (
-                        <>Store {best.store} <span className="text-green-400">{best.change >= 0 ? '+' : ''}{best.change.toFixed(1)}%</span></>
+                        <>Store {best.store} <span style={{ color: changeIsGood(best.change) ? '#22c55e' : '#ef4444' }}>{best.change >= 0 ? '+' : ''}{best.change.toFixed(1)}%</span></>
                       ) : (
                         '—'
                       )}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase text-gray-400">Worst Performing</div>
-                    <div className="mt-1 font-bold text-white">
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Worst Performing</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
                       {worst ? (
-                        <>Store {worst.store} <span className="text-red-400">{worst.change >= 0 ? '+' : ''}{worst.change.toFixed(1)}%</span></>
+                        <>Store {worst.store} <span style={{ color: changeIsGood(worst.change) ? '#22c55e' : '#ef4444' }}>{worst.change >= 0 ? '+' : ''}{worst.change.toFixed(1)}%</span></>
                       ) : (
                         '—'
                       )}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase text-gray-400">Avg Change All Stores</div>
-                    <div className={`mt-1 font-bold ${avgChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Avg Change All Stores</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: changeIsGood(avgChange) ? '#22c55e' : '#ef4444' }}>
                       {avgChange >= 0 ? '▲' : '▼'} {Math.abs(avgChange).toFixed(1)}%
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase text-gray-400">All Stores vs Peak</div>
-                    <div className="mt-1 font-bold text-red-400">
-                      ▼ {Math.abs(avgFromPeak).toFixed(1)}% below peak
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>All Stores vs Peak</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: fromPeakIsGood(avgFromPeak) ? '#22c55e' : '#ef4444' }}>
+                      {avgFromPeak <= 0 ? '▼' : '▲'} {Math.abs(avgFromPeak).toFixed(1)}% {avgFromPeak <= 0 ? 'below peak' : 'above peak'}
                     </div>
                   </div>
                 </div>
               </div>
             )
           })()}
-
-          {/* ComparisonPanel — below chart and store performance when Compare is on */}
-          {showCompare && (
-            <div className="mt-8">
-              {compareReportsLoading ? (
-                <div className="flex h-[280px] items-center justify-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-tertiary)]">
-                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--border-default)] border-t-[var(--brand)]" />
-                  Loading compare data…
-                </div>
-              ) : (
-                <ComparisonPanel
-                  selectedStores={storesSelected}
-                  activeMetric={metric}
-                  reports={compareReports}
-                  stores={STORE_LIST.map((num) => ({ id: num, number: num, name: `Store ${num}`, location: num }))}
-                  metrics={METRICS.map((m) => ({ key: m.key, label: m.label, fmt: m.fmt, color: m.color, unit: m.unit }))}
-                  storeColors={STORE_LIST.map((n) => STORE_COLORS[n] ?? '#888')}
-                  targets={{ labor_pct: 28.68, food_cost_pct: 26.42, flm_pct: 55.11 }}
-                  onMetricSelect={(key) => setMetric(key as MetricKey)}
-                />
-              )}
-            </div>
-          )}
-        </section>
-
-        {/* Section 2 — Specials Tracker */}
-        <section>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-            <h2 className="text-lg font-bold text-[var(--text-primary)]">SPECIALS TRACKER</h2>
-            <div className="flex flex-wrap items-center gap-3">
+          </div>
+        )}
+        {trendsTab === 'specials' && (
+          <section style={{ padding: 0 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+              Specials Tracker
+            </h2>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
               <button
                 onClick={() => setAddSpecialOpen(true)}
-                className="rounded-lg bg-[var(--brand)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--brand-hover)]"
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: 'var(--brand)',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
               >
                 + Add Special
               </button>
-              <div className="flex gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-1">
+              <div style={{ display: 'flex', gap: 2 }}>
                 <button
                   onClick={() => setSpecialsFilter('active')}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                    specialsFilter === 'active' ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]'
-                  }`}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 5,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    background: specialsFilter === 'active' ? 'var(--brand)' : 'transparent',
+                    color: specialsFilter === 'active' ? '#fff' : 'var(--text-tertiary)',
+                    border: specialsFilter === 'active' ? 'none' : '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                  }}
                 >
                   Active ●{activeCount}
                 </button>
                 <button
                   onClick={() => setSpecialsFilter('history')}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                    specialsFilter === 'history' ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]'
-                  }`}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 5,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    background: specialsFilter === 'history' ? 'var(--brand)' : 'transparent',
+                    color: specialsFilter === 'history' ? '#fff' : 'var(--text-tertiary)',
+                    border: specialsFilter === 'history' ? 'none' : '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                  }}
                 >
                   History
                 </button>
                 <button
                   onClick={() => setSpecialsFilter('all')}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                    specialsFilter === 'all' ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]'
-                  }`}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 5,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    background: specialsFilter === 'all' ? 'var(--brand)' : 'transparent',
+                    color: specialsFilter === 'all' ? '#fff' : 'var(--text-tertiary)',
+                    border: specialsFilter === 'all' ? 'none' : '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                  }}
                 >
                   All
                 </button>
@@ -1007,7 +1127,16 @@ export default function TrendsPage() {
               <select
                 value={storeFilter}
                 onChange={(e) => setStoreFilter(e.target.value)}
-                className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                style={{
+                  fontSize: 12,
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  background: 'var(--bg-overlay)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                }}
               >
                 <option value="all">All Stores</option>
                 {STORE_LIST.map((n) => (
@@ -1029,7 +1158,7 @@ export default function TrendsPage() {
             />
           )}
 
-          <div className="space-y-4">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {specials
               .filter((s) => storeFilter === 'all' || s.store_ids.includes(storeFilter))
               .map((special) => (
@@ -1146,7 +1275,8 @@ export default function TrendsPage() {
               ))}
           </div>
         </section>
-      </main>
+        )}
+      </div>
     </div>
   )
 }
@@ -1303,14 +1433,14 @@ function AddSpecialForm({
 }
 
 function VerdictBadge({ verdict }: { verdict: { label: string; color: string } }) {
-  const bg =
-    verdict.color === 'green' ? 'bg-green-500/20 text-green-400'
-    : verdict.color === 'red' ? 'bg-red-500/20 text-red-400'
-    : verdict.color === 'yellow' ? 'bg-amber-500/20 text-amber-400'
-    : verdict.color === 'blue' ? 'bg-blue-500/20 text-blue-400'
-    : 'bg-gray-500/20 text-gray-400'
+  const style =
+    verdict.color === 'green' ? { background: 'rgba(34,197,94,0.15)', color: '#22c55e' }
+    : verdict.color === 'red' ? { background: 'rgba(239,68,68,0.15)', color: '#ef4444' }
+    : verdict.color === 'yellow' ? { background: 'rgba(234,179,8,0.15)', color: '#eab308' }
+    : verdict.color === 'blue' ? { background: 'rgba(59,130,246,0.15)', color: '#3b82f6' }
+    : { background: 'rgba(107,114,128,0.15)', color: '#9ca3af' }
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${bg}`}>
+    <span style={{ borderRadius: 9999, padding: '2px 8px', fontSize: 11, fontWeight: 600, ...style }}>
       {verdict.label}
     </span>
   )
@@ -1379,13 +1509,6 @@ function SpecialCard({
     }
   }, [mounted, onLoadImpact])
 
-  const verdictBg =
-    verdict.color === 'green' ? 'bg-green-500/10 border-green-500/30'
-    : verdict.color === 'red' ? 'bg-red-500/10 border-red-500/30'
-    : verdict.color === 'yellow' ? 'bg-amber-500/10 border-amber-500/30'
-    : verdict.color === 'blue' ? 'bg-blue-500/10 border-blue-500/30'
-    : 'bg-gray-500/10 border-gray-500/30'
-
   const recentMetrics = (() => {
     const source = compareMode === 'lastYear' ? displayVsLastYear : displayImpact
     if (!source) return []
@@ -1411,10 +1534,17 @@ function SpecialCard({
   })()
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+    <div
+      style={{
+        background: 'var(--bg-card, #1a1d27)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 10,
+        padding: '12px 16px',
+      }}
+    >
       {/* Header row — always visible, clickable to expand/collapse */}
       <div
-        className="flex flex-wrap items-center justify-between gap-2 cursor-pointer"
+        style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: 'pointer' }}
         role="button"
         tabIndex={0}
         onClick={() => setExpanded((e) => !e)}
@@ -1422,30 +1552,63 @@ function SpecialCard({
         aria-expanded={expanded}
         aria-label={expanded ? 'Collapse special' : 'Expand special'}
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-bold text-white">{special.name}</span>
-          <span className="rounded-full bg-orange-500/20 px-2 py-0.5 text-xs text-orange-400">
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{special.name}</span>
+          <span
+            style={{
+              padding: '2px 8px',
+              borderRadius: 4,
+              fontSize: 11,
+              fontWeight: 600,
+              background: 'rgba(255,100,0,0.15)',
+              color: '#ff6400',
+              border: '1px solid rgba(255,100,0,0.2)',
+            }}
+          >
             {platformLabel}
           </span>
-          <span className="text-sm text-gray-400">
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
             Stores: {special.store_ids.join(', ')}
           </span>
-          <span className="text-xs text-gray-500">
-            {special.start_date} — {special.end_date ?? 'ongoing'} · {daysRunning} days
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            {special.start_date} — {special.end_date ?? 'ongoing'}
+          </span>
+          <span
+            style={{
+              fontSize: 10,
+              padding: '1px 6px',
+              borderRadius: 10,
+              background: 'var(--bg-overlay)',
+              color: 'var(--text-tertiary)',
+            }}
+          >
+            {daysRunning} days
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <VerdictBadge verdict={verdict} />
           <span
-            className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-gray-600 bg-gray-800 text-gray-400 transition hover:bg-gray-700 hover:text-white"
+            style={{
+              display: 'inline-flex',
+              width: 28,
+              height: 28,
+              flexShrink: 0,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 5,
+              border: '1px solid var(--border-subtle)',
+              background: 'var(--bg-overlay)',
+              color: 'var(--text-tertiary)',
+              cursor: 'pointer',
+            }}
             aria-hidden
           >
             {expanded ? (
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg width={14} height={14} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
               </svg>
             ) : (
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg width={14} height={14} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             )}
@@ -1456,20 +1619,45 @@ function SpecialCard({
       {expanded && (
         <>
       {selectedStore !== 'all' && (
-        <div className="mt-3 text-xs font-medium text-orange-400">
+        <div style={{ marginTop: 8, fontSize: 11, fontWeight: 500, color: 'var(--brand)' }}>
           Showing: Store {selectedStore}
         </div>
       )}
 
       {recentMetrics.length > 0 && (
-        <div className="mt-4 rounded-lg bg-gray-800 p-3">
-          <div className="mb-2 text-xs uppercase text-gray-400">{recentSectionTitle}</div>
-          <div className="grid grid-cols-3 gap-3">
+        <div
+          style={{
+            marginTop: 8,
+            background: 'var(--bg-overlay)',
+            borderRadius: 8,
+            padding: '12px 16px',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: 'var(--text-tertiary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: 10,
+            }}
+          >
+            {recentSectionTitle}
+          </div>
+          <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
             {recentMetrics.map((m) => (
               <div key={m.label}>
-                <div className="text-xs text-gray-400">{m.label}</div>
-                <div className="font-bold text-white">{m.value}</div>
-                <div className={m.label === 'Labor %' ? (m.change <= 0 ? 'text-xs text-green-400' : 'text-xs text-red-400') : (m.change > 0 ? 'text-xs text-green-400' : 'text-xs text-red-400')}>
+                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {m.label}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>{m.value}</div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: m.label === 'Labor %' ? (m.change <= 0 ? '#22c55e' : '#ef4444') : (m.change > 0 ? '#22c55e' : '#ef4444'),
+                  }}
+                >
                   {formatChange(m.change, m.label === 'Labor %')} {recentSectionSuffix}
                 </div>
               </div>
@@ -1479,23 +1667,38 @@ function SpecialCard({
       )}
 
       {comparisonMetrics.length > 0 && (
-        <table className="mt-4 w-full text-sm">
+        <table style={{ width: '100%', marginTop: 12, borderCollapse: 'collapse' }}>
           <thead>
-            <tr className="text-xs uppercase text-gray-400">
-              <th className="py-1 text-left">Metric</th>
-              <th className="text-right">Before</th>
-              <th className="text-right">After</th>
-              <th className="text-right">Change</th>
+            <tr>
+              <th style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '6px 0', textAlign: 'left' }}>Metric</th>
+              <th style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '6px 0', textAlign: 'right' }}>Before</th>
+              <th style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '6px 0', textAlign: 'right' }}>After</th>
+              <th style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '6px 0', textAlign: 'right' }}>Change</th>
             </tr>
           </thead>
           <tbody>
             {comparisonMetrics.map((m) => (
-              <tr key={m.label} className="border-t border-gray-800">
-                <td className="py-2 text-gray-300">{m.label}</td>
-                <td className="text-right text-gray-400">{m.before}</td>
-                <td className="text-right text-white">{m.after}</td>
-                <td className={`text-right font-bold ${m.isGood ? 'text-green-400' : 'text-red-400'}`}>
-                  {formatChange(m.change, m.isPctPoints)} {m.isGood ? '✅' : '⚠️'}
+              <tr key={m.label} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                <td style={{ fontSize: 13, padding: '8px 0', color: 'var(--text-primary)' }}>{m.label}</td>
+                <td style={{ fontSize: 13, padding: '8px 0', textAlign: 'right', color: 'var(--text-tertiary)' }}>{m.before}</td>
+                <td style={{ fontSize: 13, padding: '8px 0', textAlign: 'right', color: 'var(--text-primary)' }}>{m.after}</td>
+                <td style={{ padding: '8px 0', textAlign: 'right' }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 8px',
+                      borderRadius: 4,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      background: m.isGood ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                      color: m.isGood ? '#22c55e' : '#ef4444',
+                    }}
+                  >
+                    {formatChange(m.change, m.isPctPoints)}
+                    {!m.isGood && <span style={{ color: '#f59e0b', fontSize: 10 }}>⚠</span>}
+                  </span>
                 </td>
               </tr>
             ))}
@@ -1505,105 +1708,117 @@ function SpecialCard({
 
       {impact && (
         <>
-          <div className="mb-3 mt-3 flex gap-2">
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setCompareMode('lastYear') }}
-              className={`rounded-full border px-3 py-1 text-xs ${
-                compareMode === 'lastYear'
-                  ? 'border-orange-500 bg-orange-500 text-white'
-                  : 'border-gray-600 text-gray-400'
-              }`}
+              style={{
+                padding: '4px 12px',
+                borderRadius: 5,
+                fontSize: 11,
+                fontWeight: 600,
+                fontFamily: 'inherit',
+                background: compareMode === 'lastYear' ? 'var(--brand)' : 'transparent',
+                color: compareMode === 'lastYear' ? '#fff' : 'var(--text-tertiary)',
+                border: compareMode === 'lastYear' ? 'none' : '1px solid var(--border-subtle)',
+                cursor: 'pointer',
+              }}
             >
               vs Same Period Last Year
             </button>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setCompareMode('lastWeek') }}
-              className={`rounded-full border px-3 py-1 text-xs ${
-                compareMode === 'lastWeek'
-                  ? 'border-orange-500 bg-orange-500 text-white'
-                  : 'border-gray-600 text-gray-400'
-              }`}
+              style={{
+                padding: '4px 12px',
+                borderRadius: 5,
+                fontSize: 11,
+                fontWeight: 600,
+                fontFamily: 'inherit',
+                background: compareMode === 'lastWeek' ? 'var(--brand)' : 'transparent',
+                color: compareMode === 'lastWeek' ? '#fff' : 'var(--text-tertiary)',
+                border: compareMode === 'lastWeek' ? 'none' : '1px solid var(--border-subtle)',
+                cursor: 'pointer',
+              }}
             >
               vs Last Week
             </button>
           </div>
-          <div className="rounded-lg bg-gray-800 p-3 text-xs">
+          <div style={{ marginTop: 8, background: 'var(--bg-overlay)', borderRadius: 8, padding: '12px 16px', fontSize: 12 }}>
             {compareMode === 'lastYear' ? (
               <>
-                <div className="mb-2 uppercase text-gray-400">vs Last Year (Same Period)</div>
+                <div style={{ marginBottom: 8, fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>vs Last Year (Same Period)</div>
                 {vsLastYearLoading ? (
-                  <div className="flex items-center gap-2 text-gray-400">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-600 border-t-gray-400" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-tertiary)' }}>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border-subtle)] border-t-[var(--text-tertiary)]" />
                     Loading…
                   </div>
                 ) : displayVsLastYear ? (
-                  <div className="flex flex-wrap gap-4">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
                     <span>
                       Net Sales{' '}
-                      <span className={displayVsLastYear.netSalesChange >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      <span style={{ color: displayVsLastYear.netSalesChange >= 0 ? '#22c55e' : '#ef4444' }}>
                         {displayVsLastYear.netSalesChange >= 0 ? '▲' : '▼'}
                         {Math.abs(displayVsLastYear.netSalesChange).toFixed(1)}%
                       </span>
                     </span>
                     <span>
                       DD{' '}
-                      <span className={displayVsLastYear.ddSalesChange >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      <span style={{ color: displayVsLastYear.ddSalesChange >= 0 ? '#22c55e' : '#ef4444' }}>
                         {displayVsLastYear.ddSalesChange >= 0 ? '▲' : '▼'}
                         {Math.abs(displayVsLastYear.ddSalesChange).toFixed(1)}%
                       </span>
                     </span>
                     <span>
                       Labor{' '}
-                      <span className={displayVsLastYear.laborChange <= 0 ? 'text-green-400' : 'text-red-400'}>
+                      <span style={{ color: displayVsLastYear.laborChange <= 0 ? '#22c55e' : '#ef4444' }}>
                         {formatChange(displayVsLastYear.laborChange, true)}
                       </span>
                     </span>
                   </div>
                 ) : (
-                  <span className="text-gray-500">—</span>
+                  <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                 )}
               </>
             ) : (
               <>
-                <div className="mb-2 uppercase text-gray-400">vs Last Week</div>
+                <div style={{ marginBottom: 8, fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>vs Last Week</div>
                 {displayImpact ? (
-                  <div className="flex flex-wrap gap-4">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
                     <span>
                       Net Sales{' '}
-                      <span className={displayImpact.netSalesChange >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      <span style={{ color: displayImpact.netSalesChange >= 0 ? '#22c55e' : '#ef4444' }}>
                         {displayImpact.netSalesChange >= 0 ? '▲' : '▼'}
                         {Math.abs(displayImpact.netSalesChange).toFixed(1)}%
                       </span>
                     </span>
                     <span>
                       DD{' '}
-                      <span className={displayImpact.ddSalesChange >= 0 ? 'text-green-400' : 'text-red-400'}>
+                      <span style={{ color: displayImpact.ddSalesChange >= 0 ? '#22c55e' : '#ef4444' }}>
                         {displayImpact.ddSalesChange >= 0 ? '▲' : '▼'}
                         {Math.abs(displayImpact.ddSalesChange).toFixed(1)}%
                       </span>
                     </span>
                     <span>
                       Labor{' '}
-                      <span className={displayImpact.laborChange <= 0 ? 'text-green-400' : 'text-red-400'}>
+                      <span style={{ color: displayImpact.laborChange <= 0 ? '#22c55e' : '#ef4444' }}>
                         {formatChange(displayImpact.laborChange, true)}
                       </span>
                     </span>
                   </div>
                 ) : (
-                  <span className="text-gray-500">—</span>
+                  <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                 )}
               </>
             )}
           </div>
 
           {/* Store Breakdown — collapsible */}
-          <div className="mt-4">
+          <div style={{ marginTop: 12 }}>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setShowStoreBreakdown(!showStoreBreakdown) }}
-              className="flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300"
+              style={{ fontSize: 11, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
             >
               {showStoreBreakdown ? '▲' : '▼'} Store Breakdown
             </button>
@@ -1614,11 +1829,11 @@ function SpecialCard({
                 METRICS.find((m) => m.key === 'net_sales')?.fmt(v) ?? v.toLocaleString()
               if (!beforeData || !afterData) {
                 return (
-                  <div className="mt-3 text-xs text-gray-500">Loading store data…</div>
+                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-tertiary)' }}>Loading store data…</div>
                 )
               }
               return (
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
                   {special.store_ids.map((storeId) => {
                     const storeMetrics = getStoreMetrics(
                       storeId,
@@ -1636,47 +1851,51 @@ function SpecialCard({
                           ? storeMetrics.ueSalesChange
                           : storeMetrics.netSalesChange
                     const verdictBg =
-                      storeVerdict.color === 'green' ? 'bg-green-500/20 text-green-400'
-                      : storeVerdict.color === 'red' ? 'bg-red-500/20 text-red-400'
-                      : storeVerdict.color === 'yellow' ? 'bg-yellow-500/20 text-yellow-400'
-                      : 'bg-gray-500/20 text-gray-400'
+                      storeVerdict.color === 'green' ? { background: 'rgba(34,197,94,0.1)', color: '#22c55e' }
+                      : storeVerdict.color === 'red' ? { background: 'rgba(239,68,68,0.1)', color: '#ef4444' }
+                      : storeVerdict.color === 'yellow' ? { background: 'rgba(234,179,8,0.1)', color: '#eab308' }
+                      : { background: 'rgba(107,114,128,0.1)', color: '#9ca3af' }
                     return (
                       <div
                         key={storeId}
-                        className="rounded-lg border-l-2 bg-gray-800 p-3"
-                        style={{ borderLeftColor: STORE_COLORS[storeId] ?? '#888' }}
+                        style={{
+                          background: 'var(--bg-overlay)',
+                          borderRadius: 8,
+                          padding: 12,
+                          borderLeft: `3px solid ${STORE_COLORS[storeId] ?? '#888'}`,
+                        }}
                       >
-                        <div className="mb-2 flex items-center justify-between">
-                          <span className="text-sm font-bold text-white">Store {storeId}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${verdictBg}`}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Store {storeId}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, ...verdictBg }}>
                             {storeVerdict.label}
                           </span>
                         </div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-400">Net Sales</span>
-                            <span className={storeMetrics.netSalesChange >= 0 ? 'text-green-400' : 'text-red-400'}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                            <span style={{ color: 'var(--text-tertiary)' }}>Net Sales</span>
+                            <span style={{ color: storeMetrics.netSalesChange >= 0 ? '#22c55e' : '#ef4444' }}>
                               {storeMetrics.netSalesChange >= 0 ? '▲' : '▼'}
                               {Math.abs(storeMetrics.netSalesChange).toFixed(1)}% vs {compareMode === 'lastYear' ? 'LY' : 'LW'}
                             </span>
                           </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-400">
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                            <span style={{ color: 'var(--text-tertiary)' }}>
                               {special.platform === 'doordash' ? 'DoorDash (DDD)' : special.platform === 'ubereats' ? 'Aggregator (DD+UE+GH)' : 'Net Sales'}
                             </span>
-                            <span className={primaryChange >= 0 ? 'text-green-400' : 'text-red-400'}>
+                            <span style={{ color: primaryChange >= 0 ? '#22c55e' : '#ef4444' }}>
                               {primaryChange >= 0 ? '▲' : '▼'}
                               {Math.abs(primaryChange).toFixed(1)}% vs {compareMode === 'lastYear' ? 'LY' : 'LW'}
                             </span>
                           </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="text-gray-400">Labor %</span>
-                            <span className={storeMetrics.laborChange <= 0 ? 'text-green-400' : 'text-red-400'}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                            <span style={{ color: 'var(--text-tertiary)' }}>Labor %</span>
+                            <span style={{ color: storeMetrics.laborChange <= 0 ? '#22c55e' : '#ef4444' }}>
                               {formatChange(storeMetrics.laborChange, true)} vs {compareMode === 'lastYear' ? 'LY' : 'LW'}
                             </span>
                           </div>
                         </div>
-                        <div className="mt-2 text-xs text-gray-500">
+                        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-tertiary)' }}>
                           Before: {formatMetricVal(storeMetrics.before.netSales)} → After: {formatMetricVal(storeMetrics.after.netSales)}
                         </div>
                       </div>
@@ -1689,48 +1908,88 @@ function SpecialCard({
         </>
       )}
 
-      <div className={`mt-4 rounded-lg border p-3 ${verdictBg}`}>
-        <div className="font-bold">{verdict.label}</div>
-        <div className="mt-1 text-sm text-gray-300">{verdict.reason}</div>
+      <div style={{ marginTop: 12, padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', ...(verdict.color === 'green' ? { background: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.2)' } : verdict.color === 'red' ? { background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)' } : verdict.color === 'yellow' ? { background: 'rgba(234,179,8,0.08)', borderColor: 'rgba(234,179,8,0.2)' } : verdict.color === 'blue' ? { background: 'rgba(59,130,246,0.08)', borderColor: 'rgba(59,130,246,0.2)' } : { background: 'var(--bg-overlay)' }) }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{verdict.label}</div>
+        <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text-secondary)' }}>{verdict.reason}</div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {special.status === 'active' && (
           <>
             <button
-              onClick={() => onAction('paused')}
-              className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+              onClick={(e) => { e.stopPropagation(); onAction('paused') }}
+              style={{
+                fontSize: 11,
+                padding: '4px 10px',
+                borderRadius: 5,
+                background: 'var(--bg-overlay)',
+                color: 'var(--text-tertiary)',
+                border: '1px solid var(--border-subtle)',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontWeight: 600,
+              }}
             >
               Pause
             </button>
             <button
-              onClick={() => onAction('stopped')}
-              className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+              onClick={(e) => { e.stopPropagation(); onAction('stopped') }}
+              style={{
+                fontSize: 11,
+                padding: '4px 10px',
+                borderRadius: 5,
+                background: 'rgba(239,68,68,0.1)',
+                color: '#ef4444',
+                border: '1px solid rgba(239,68,68,0.2)',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontWeight: 600,
+              }}
             >
               Stop
             </button>
             <button
-              onClick={() => onAction('extended')}
-              className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+              onClick={(e) => { e.stopPropagation(); onAction('extended') }}
+              style={{
+                fontSize: 11,
+                padding: '4px 10px',
+                borderRadius: 5,
+                background: 'var(--bg-overlay)',
+                color: 'var(--text-tertiary)',
+                border: '1px solid var(--border-subtle)',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontWeight: 600,
+              }}
             >
               Extend
             </button>
           </>
         )}
         <button
-          onClick={onLoadHistory}
-          className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
+          onClick={(e) => { e.stopPropagation(); onLoadHistory() }}
+          style={{
+            fontSize: 11,
+            padding: '4px 10px',
+            borderRadius: 5,
+            background: 'var(--bg-overlay)',
+            color: 'var(--text-tertiary)',
+            border: '1px solid var(--border-subtle)',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            fontWeight: 600,
+          }}
         >
           History
         </button>
       </div>
 
       {showHistory && Array.isArray(history) && (
-        <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
-          <div className="mb-2 text-xs font-semibold uppercase text-gray-400">History</div>
-          <ul className="space-y-1 text-sm text-gray-300">
+        <div style={{ marginTop: 12, padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border-subtle)', background: 'var(--bg-overlay)' }}>
+          <div style={{ marginBottom: 8, fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>History</div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--text-secondary)' }}>
             {history.map((h) => (
-              <li key={h.id}>
+              <li key={h.id} style={{ marginBottom: 4 }}>
                 {new Date(h.created_at).toLocaleString()} — {h.action}
                 {h.notes ? `: ${h.notes}` : ''}
               </li>

@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import AuditUpload from '@/components/audit/AuditUpload'
 import AuditSummaryTable from '@/components/audit/AuditSummaryTable'
 import AuditDetailsTable from '@/components/audit/AuditDetailsTable'
 import FraudFlags from '@/components/audit/FraudFlags'
+import NavBar from '@/components/NavBar'
 
 export type TimePeriodTab = 'current_period' | 'last_period' | 'last_year'
 
@@ -69,34 +69,16 @@ export default function AuditPage() {
 
   return (
     <div style={{ background: 'var(--bg-base, #0a0b0f)', minHeight: '100vh', color: 'var(--text-primary, #f1f3f9)' }}>
-      <div style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)', padding: '0 32px' }}>
-        <div style={{ maxWidth: 1400, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: '#fff' }}>PJ</div>
-            <div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 16, color: 'var(--text-primary)' }}>Papa Johns Ops</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Audit — Zero, Bad & Canceled Orders</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
-            <Link href="/dashboard" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Dashboard</Link>
-            <Link href="/trends" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Trends</Link>
-            <Link href="/analytics/profitability" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Analytics</Link>
-            <span style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'var(--brand)', color: '#fff' }}>Audit</span>
-            <Link href="/ai" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>✨ AI</Link>
-            <Link href="/dashboard" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Live</Link>
-            <Link href="/dashboard" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Guest Experience</Link>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: 'var(--text-tertiary)' }}>
-            {lastUpdated && <span>Last updated: {lastUpdated}</span>}
-            <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 500, background: 'var(--success-subtle)', color: 'var(--success-text)' }}>
-              {TIME_PERIOD_TABS.find((t) => t.value === timePeriod)?.label ?? timePeriod}
-            </span>
-          </div>
-        </div>
-      </div>
+      <NavBar />
 
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: 24 }}>
+        {/* Audit-specific toolbar: last updated + period badge */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginBottom: 20, fontSize: 11, color: 'var(--text-tertiary)' }}>
+          {lastUpdated && <span>Last updated: {lastUpdated}</span>}
+          <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 500, background: 'var(--success-subtle)', color: 'var(--success-text)' }}>
+            {TIME_PERIOD_TABS.find((t) => t.value === timePeriod)?.label ?? timePeriod}
+          </span>
+        </div>
         {/* Collapsible Upload at top — hidden by default */}
         <div style={{ marginBottom: 20 }}>
           <button

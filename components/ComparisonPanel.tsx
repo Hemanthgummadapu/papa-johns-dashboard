@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   LineChart,
   Line,
@@ -13,6 +13,7 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
+  Cell,
 } from 'recharts'
 import { getComparisonData, getPctChange, isImprovement, type PeriodMode, type ReportPoint } from '@/lib/comparison'
 
@@ -52,6 +53,8 @@ type ComparisonPanelProps = {
   }> | null
   cubeDate?: string
   cubePeriod?: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  /** When true, do not fetch internally; only use cubeData when provided (e.g. trends Compare tab). */
+  externalDataOnly?: boolean
 }
 
 // Helper functions for date calculations
@@ -104,6 +107,82 @@ function getPrevMonths(current: string, n: number): string[] {
 
 function roundPct(v: number): number {
   return Math.round(v * 10) / 10
+}
+
+/** Return prior period date in same API format as input (daily YYYY-MM-DD, weekly YYYY-Wnn, monthly YYYY-MM, yearly YYYY). */
+function getPriorPeriodDate(
+  dateStr: string,
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly',
+  offset: number
+): string {
+  if (period === 'daily') {
+    const d = new Date(dateStr + 'T12:00:00Z')
+    d.setUTCDate(d.getUTCDate() - offset)
+    return d.toISOString().slice(0, 10)
+  }
+  if (period === 'weekly') {
+    const [yStr, wStr] = dateStr.split('-W')
+    let y = parseInt(yStr || '0', 10)
+    let w = parseInt(wStr || '1', 10)
+    w -= offset
+    while (w < 1) {
+      w += 52
+      y -= 1
+    }
+    return `${y}-W${String(w).padStart(2, '0')}`
+  }
+  if (period === 'monthly') {
+    const [yStr, mStr] = dateStr.split('-')
+    let y = parseInt(yStr || '0', 10)
+    let m = parseInt(mStr || '1', 10)
+    m -= offset
+    while (m < 1) {
+      m += 12
+      y -= 1
+    }
+    return `${y}-${String(m).padStart(2, '0')}`
+  }
+  if (period === 'yearly') {
+    const y = parseInt(dateStr, 10) - offset
+    return String(y)
+  }
+  return dateStr
+}
+
+/** Same period last year in same API format. */
+function getSamePeriodLastYear(
+  dateStr: string,
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly'
+): string {
+  if (period === 'daily') {
+    const d = new Date(dateStr + 'T12:00:00Z')
+    d.setUTCFullYear(d.getUTCFullYear() - 1)
+    return d.toISOString().slice(0, 10)
+  }
+  if (period === 'weekly' || period === 'monthly') {
+    const [yStr, rest] = dateStr.split('-')
+    const y = parseInt(yStr || '0', 10) - 1
+    return `${y}-${rest || ''}`
+  }
+  if (period === 'yearly') {
+    return String(parseInt(dateStr, 10) - 1)
+  }
+  return dateStr
+}
+
+function getComparisonTabLabels(period: 'daily' | 'weekly' | 'monthly' | 'yearly'): [string, string, string] {
+  switch (period) {
+    case 'daily':
+      return ['vs Previous Day', 'vs Previous Week', 'vs Same Day Last Year']
+    case 'weekly':
+      return ['vs Previous Week', 'vs Previous Month', 'vs Same Week Last Year']
+    case 'monthly':
+      return ['vs Previous Month', 'vs Previous Quarter', 'vs Same Month Last Year']
+    case 'yearly':
+      return ['vs Previous Year', 'vs 2 Years Ago', 'vs 3 Years Ago']
+    default:
+      return ['vs Previous Week', 'vs Previous Month', 'vs Same Period Last Year']
+  }
 }
 
 type CubeStore = {
@@ -175,8 +254,12 @@ export default function ComparisonPanel({
   cubeData,
   cubeDate,
   cubePeriod = 'daily',
+  externalDataOnly = false,
 }: ComparisonPanelProps) {
   const [periodMode, setPeriodMode] = useState<PeriodMode>('week')
+  const [activeComparison, setActiveComparison] = useState<0 | 1 | 2>(0)
+  const [priorCubeData, setPriorCubeData] = useState<CubeStore[] | null>(null)
+  const [priorLoading, setPriorLoading] = useState(false)
   const [viewMode, setViewMode] = useState<'summary' | 'graph'>('summary')
   const [cubeReports, setCubeReports] = useState<Record<string, ReportPoint[]>>({})
   const [cubeLoading, setCubeLoading] = useState(false)
@@ -184,8 +267,55 @@ export default function ComparisonPanel({
   const [yoyChartData, setYoyChartData] = useState<Array<Record<string, number | string>>>([])
   const [yoyError, setYoyError] = useState<string | null>(null)
 
-  // Fetch cube data for year-over-year comparisons
+  // Fetch cube data for year-over-year comparisons (skip when external cubeData is provided)
   useEffect(() => {
+    // When parent provides already-fetched cube data, use it directly and skip internal fetch
+    if (cubeData && cubeData.length > 0 && cubeDate) {
+      const newReports: Record<string, ReportPoint[]> = {}
+      const label = cubeDate
+      selectedStores.forEach((storeNum) => {
+        const store = cubeData.find((s: CubeStore) => String(s.storeNumber) === storeNum)
+        if (store) {
+          const netSales = store.netSales ?? 0
+          const foodCostPct =
+            netSales && store.foodCostUsd != null
+              ? roundPct((store.foodCostUsd / netSales) * 100)
+              : 0
+          newReports[storeNum] = [
+            {
+              label,
+              report_date: cubeDate,
+              net_sales: netSales,
+              labor_pct: roundPct(store.laborPct ?? 0),
+              food_cost_pct: foodCostPct,
+              flm_pct: roundPct(store.flmPct ?? 0),
+              cash_short: 0,
+              doordash_sales: store.dddSales ?? 0,
+              ubereats_sales: store.aggregatorSales ?? 0,
+            },
+          ]
+        } else {
+          newReports[storeNum] = []
+        }
+      })
+      setCubeReports(newReports)
+      setHasCubeData(true)
+      setCubeLoading(false)
+      setYoyChartData([])
+      setYoyError(null)
+      return
+    }
+
+    // When externalDataOnly and no data passed, do not fetch; use reports fallback
+    if (externalDataOnly) {
+      setCubeReports({})
+      setHasCubeData(false)
+      setCubeLoading(false)
+      setYoyChartData([])
+      setYoyError(null)
+      return
+    }
+
     if (periodMode === 'year') {
       if (!cubeDate || !activeMetric) {
         setHasCubeData(false)
@@ -658,7 +788,45 @@ export default function ComparisonPanel({
         })
         .finally(() => setCubeLoading(false))
     }
-  }, [periodMode, selectedStores, cubeDate, cubePeriod, activeMetric])
+  }, [periodMode, selectedStores, cubeDate, cubePeriod, activeMetric, cubeData, externalDataOnly])
+
+  // When using external data (trends Compare), fetch prior period for comparison
+  const useExternalComparison = Boolean(externalDataOnly && cubeData && cubeData.length > 0 && cubeDate)
+  useEffect(() => {
+    if (!useExternalComparison) {
+      setPriorCubeData(null)
+      return
+    }
+    let priorDate: string
+    if (activeComparison === 0) {
+      priorDate = getPriorPeriodDate(cubeDate!, cubePeriod, 1)
+    } else if (activeComparison === 1) {
+      const offset =
+        cubePeriod === 'yearly' ? 2
+        : cubePeriod === 'monthly' ? 3
+        : cubePeriod === 'weekly' ? 4
+        : 7
+      priorDate = getPriorPeriodDate(cubeDate!, cubePeriod, offset)
+    } else {
+      if (cubePeriod === 'yearly') {
+        priorDate = getPriorPeriodDate(cubeDate!, cubePeriod, 3)
+      } else {
+        priorDate = getSamePeriodLastYear(cubeDate!, cubePeriod)
+      }
+    }
+    setPriorLoading(true)
+    fetch(`/api/cube?date=${encodeURIComponent(priorDate)}&period=${encodeURIComponent(cubePeriod)}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json?.success && Array.isArray(json.stores)) {
+          setPriorCubeData(json.stores as CubeStore[])
+        } else {
+          setPriorCubeData(null)
+        }
+      })
+      .catch(() => setPriorCubeData(null))
+      .finally(() => setPriorLoading(false))
+  }, [useExternalComparison, activeComparison, cubeDate, cubePeriod])
 
   // Use cube data if available, otherwise fall back to CSV reports
   const effectiveReports = useMemo(() => {
@@ -670,6 +838,29 @@ export default function ComparisonPanel({
 
   const comparisonData = useMemo(() => {
     if (!activeMetric) return []
+    if (useExternalComparison && cubeData && cubeData.length > 0) {
+      const lowerIsBetter = ['labor_pct', 'food_cost_pct', 'flm_pct'].includes(activeMetric)
+      return selectedStores.map((storeNum) => {
+        const currentStore = cubeData.find((s: CubeStore) => String(s.storeNumber) === storeNum)
+        const priorStore = priorCubeData?.find((s: CubeStore) => String(s.storeNumber) === storeNum)
+        const currentVal = currentStore ? getMetricValue(currentStore, activeMetric) : 0
+        const priorVal = priorStore ? getMetricValue(priorStore, activeMetric) : 0
+        const pctChange =
+          priorVal > 0 ? ((currentVal - priorVal) / priorVal) * 100 : null
+        const isImprovement =
+          pctChange == null ? false
+          : lowerIsBetter ? pctChange < 0
+          : pctChange > 0
+        return {
+          storeNum,
+          current: currentVal,
+          previous: priorVal,
+          pctChange: pctChange ?? 0,
+          pctChangeNull: pctChange == null,
+          isImprovement,
+        }
+      })
+    }
     // For year mode, use fetched YoY data
     if (periodMode === 'year') {
       if (!hasCubeData || Object.keys(cubeReports).length === 0) {
@@ -713,10 +904,25 @@ export default function ComparisonPanel({
       })
     }
     return getComparisonData(effectiveReports, selectedStores, activeMetric, periodMode)
-  }, [effectiveReports, selectedStores, activeMetric, periodMode, hasCubeData, cubeReports])
+  }, [effectiveReports, selectedStores, activeMetric, periodMode, hasCubeData, cubeReports, useExternalComparison, cubeData, priorCubeData])
 
   // Build chart data for line chart (last 5 data points)
   const lineChartData = useMemo(() => {
+    if (useExternalComparison && cubeData && cubeData.length > 0 && activeMetric) {
+      const currentPoint: Record<string, number | string> = { week: 'Current' }
+      const priorPoint: Record<string, number | string> = { week: 'Prior' }
+      selectedStores.forEach((storeNum) => {
+        const curStore = cubeData.find((s: CubeStore) => String(s.storeNumber) === storeNum)
+        const prevStore = priorCubeData?.find((s: CubeStore) => String(s.storeNumber) === storeNum)
+        const curVal = curStore ? getMetricValue(curStore, activeMetric) : 0
+        const prevVal = prevStore ? getMetricValue(prevStore, activeMetric) : 0
+        currentPoint[`${storeNum}_current`] = curVal
+        currentPoint[`${storeNum}_previous`] = 0
+        priorPoint[`${storeNum}_current`] = 0
+        priorPoint[`${storeNum}_previous`] = prevVal
+      })
+      return [currentPoint, priorPoint]
+    }
     // For week mode — dual lines: _current (solid) vs _previous (dashed)
     if (periodMode === 'week' && yoyChartData.length > 0) {
       return yoyChartData.map((point) => {
@@ -817,7 +1023,7 @@ export default function ComparisonPanel({
     }
     
     return dataPoints
-  }, [effectiveReports, selectedStores, activeMetric, periodMode, cubePeriod, yoyChartData])
+  }, [effectiveReports, selectedStores, activeMetric, periodMode, cubePeriod, yoyChartData, useExternalComparison, cubeData, priorCubeData])
 
   // Build bar chart data (current vs previous period)
   const barChartData = useMemo(() => {
@@ -834,24 +1040,72 @@ export default function ComparisonPanel({
   const activeMetricObj = metrics.find((m) => m.key === activeMetric) || metrics[0]
   const target = activeMetric ? targets[activeMetric] : undefined
 
+  // Graph View: one row per store with storeId_current and storeId_prior for side-by-side bars
+  const storeBarData = useMemo(() => {
+    if (!activeMetric) return []
+    if (useExternalComparison && cubeData) {
+      return selectedStores.map((storeId) => {
+        const currentStore = cubeData.find((s: CubeStore) => String(s.storeNumber) === storeId)
+        const priorStore = priorCubeData?.find((s: CubeStore) => String(s.storeNumber) === storeId)
+        const currentVal = currentStore ? getMetricValue(currentStore, activeMetric) : 0
+        const priorVal = priorStore ? getMetricValue(priorStore, activeMetric) : 0
+        const row: Record<string, string | number> = { store: `Store ${storeId}` }
+        selectedStores.forEach((sid) => {
+          row[`${sid}_current`] = sid === storeId ? currentVal : 0
+          row[`${sid}_prior`] = sid === storeId ? priorVal : 0
+        })
+        return row
+      })
+    }
+    return comparisonData.map((data) => {
+      const row: Record<string, string | number> = { store: `Store ${data.storeNum}` }
+      comparisonData.forEach((d) => {
+        row[`${d.storeNum}_current`] = d.storeNum === data.storeNum ? data.current : 0
+        row[`${d.storeNum}_prior`] = d.storeNum === data.storeNum ? data.previous : 0
+      })
+      return row
+    })
+  }, [selectedStores, activeMetric, cubeData, priorCubeData, useExternalComparison, comparisonData])
+
+  // Grouped bar chart: one entry per store { name, current, prior } for Current/Prior bars per store
+  const groupedChartData = useMemo(() => {
+    if (!activeMetric) return []
+    if (useExternalComparison && cubeData) {
+      return selectedStores.map((storeId) => {
+        const currentStore = cubeData.find((s: CubeStore) => String(s.storeNumber) === storeId)
+        const priorStore = priorCubeData?.find((s: CubeStore) => String(s.storeNumber) === storeId)
+        return {
+          name: storeId,
+          current: currentStore ? getMetricValue(currentStore, activeMetric) : 0,
+          prior: priorStore ? getMetricValue(priorStore, activeMetric) : 0,
+        }
+      })
+    }
+    return comparisonData.map((d) => ({
+      name: d.storeNum,
+      current: d.current,
+      prior: d.previous,
+    }))
+  }, [selectedStores, activeMetric, cubeData, priorCubeData, useExternalComparison, comparisonData])
+
+  const storeColorByKey = useMemo(() => {
+    const m: Record<string, string> = {}
+    selectedStores.forEach((storeId) => {
+      const idx = stores.findIndex((s) => s.number === storeId)
+      m[storeId] = storeColors[idx % storeColors.length] ?? 'var(--text-tertiary)'
+    })
+    return m
+  }, [selectedStores, stores, storeColors])
+
+  const isPercentMetric = activeMetricObj?.unit === '%'
+
+  const comparisonTabLabels = useMemo(() => getComparisonTabLabels(cubePeriod), [cubePeriod])
+
   const isDualLineMode =
+    useExternalComparison ||
     periodMode === 'week' ||
     periodMode === 'month' ||
     (periodMode === 'year' && cubePeriod === 'monthly')
-
-  const legendLabel = (val: string) => {
-    if (val.endsWith('_ty')) return `Store ${val.replace('_ty', '')} — This Year`
-    if (val.endsWith('_ly')) return `Store ${val.replace('_ly', '')} — Last Year`
-    if (val.endsWith('_current')) {
-      const suffix = periodMode === 'week' ? 'Current 4 Wks' : 'Current 3 Mo'
-      return `Store ${val.replace('_current', '')} — ${suffix}`
-    }
-    if (val.endsWith('_previous')) {
-      const suffix = periodMode === 'week' ? 'Previous 4 Wks' : 'Previous 3 Mo'
-      return `Store ${val.replace('_previous', '')} — ${suffix}`
-    }
-    return `Store ${val}`
-  }
 
   const DualLines = () => (
     <>
@@ -904,6 +1158,24 @@ export default function ComparisonPanel({
     </>
   )
 
+  const legendLabel = (val: string) => {
+    if (useExternalComparison) {
+      if (val.endsWith('_current')) return `Store ${val.replace('_current', '')} — Current`
+      if (val.endsWith('_previous')) return `Store ${val.replace('_previous', '')} — Prior`
+    }
+    if (val.endsWith('_ty')) return `Store ${val.replace('_ty', '')} — This Year`
+    if (val.endsWith('_ly')) return `Store ${val.replace('_ly', '')} — Last Year`
+    if (val.endsWith('_current')) {
+      const suffix = periodMode === 'week' ? 'Current 4 Wks' : 'Current 3 Mo'
+      return `Store ${val.replace('_current', '')} — ${suffix}`
+    }
+    if (val.endsWith('_previous')) {
+      const suffix = periodMode === 'week' ? 'Previous 4 Wks' : 'Previous 3 Mo'
+      return `Store ${val.replace('_previous', '')} — ${suffix}`
+    }
+    return `Store ${val}`
+  }
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload) return null
     return (
@@ -930,6 +1202,30 @@ export default function ComparisonPanel({
             </div>
           )
         })}
+      </div>
+    )
+  }
+
+  const CustomBarLabel = (props: { x?: number; y?: number; width?: number; value?: number; isPercent?: boolean }) => {
+    const { x = 0, y = 0, width = 0, value, isPercent } = props
+    if (value == null) return null
+    const text = isPercent ? `${Number(value).toFixed(1)}%` : `$${(Number(value) / 1000).toFixed(0)}k`
+    return (
+      <text x={x + width / 2} y={y - 4} fill="rgba(255,255,255,0.5)" textAnchor="middle" fontSize={9} fontFamily="'JetBrains Mono', monospace">
+        {text}
+      </text>
+    )
+  }
+
+  const GroupedBarTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; payload: { name: string; current: number; prior: number } }>; label?: string }) => {
+    if (!active || !payload?.length || !label) return null
+    const row = payload[0]?.payload as { name: string; current: number; prior: number }
+    if (!row) return null
+    return (
+      <div style={{ background: '#1a1d27', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '12px 16px', fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.9)', marginBottom: 8 }}>Store {label}</div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}>Current: {isPercentMetric ? `${row.current.toFixed(1)}%` : `$${Number(row.current).toLocaleString()}`}</div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Prior: {isPercentMetric ? `${row.prior.toFixed(1)}%` : `$${Number(row.prior).toLocaleString()}`}</div>
       </div>
     )
   }
@@ -1047,7 +1343,7 @@ export default function ComparisonPanel({
             {activeMetricObj.label} Comparison
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 4, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
-            {selectedStores.length} store{selectedStores.length !== 1 ? 's' : ''} · {periodMode === 'week' ? 'vs Previous Week' : periodMode === 'month' ? 'vs Previous Month' : 'vs Same Period Last Year'}
+            {selectedStores.length} store{selectedStores.length !== 1 ? 's' : ''} · {useExternalComparison ? comparisonTabLabels[activeComparison] : periodMode === 'week' ? 'vs Previous Week' : periodMode === 'month' ? 'vs Previous Month' : 'vs Same Period Last Year'}
           </div>
         </div>
         
@@ -1082,31 +1378,53 @@ export default function ComparisonPanel({
 
           {/* Period Toggle */}
           <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
-            {([
-              ['week', 'vs Previous Week'],
-              ['month', 'vs Previous Month'],
-              ['year', 'vs Same Period Last Year'],
-            ] as const).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setPeriodMode(key)}
-                style={{
-                  padding: '6px 16px',
-                  borderRadius: 8,
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  letterSpacing: '0.04em',
-                  background: periodMode === key ? 'var(--bg-elevated)' : 'transparent',
-                  color: periodMode === key ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                  transition: 'all 0.2s',
-                }}
-              >
-                {label}
-              </button>
-            ))}
+            {useExternalComparison
+              ? comparisonTabLabels.map((label, idx) => (
+                  <button
+                    key={label}
+                    onClick={() => setActiveComparison(idx as 0 | 1 | 2)}
+                    style={{
+                      padding: '6px 16px',
+                      borderRadius: 8,
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      letterSpacing: '0.04em',
+                      background: activeComparison === idx ? 'var(--bg-elevated)' : 'transparent',
+                      color: activeComparison === idx ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))
+              : ([
+                  ['week', 'vs Previous Week'],
+                  ['month', 'vs Previous Month'],
+                  ['year', 'vs Same Period Last Year'],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setPeriodMode(key)}
+                    style={{
+                      padding: '6px 16px',
+                      borderRadius: 8,
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      letterSpacing: '0.04em',
+                      background: periodMode === key ? 'var(--bg-elevated)' : 'transparent',
+                      color: periodMode === key ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
           </div>
         </div>
       </div>
@@ -1121,9 +1439,9 @@ export default function ComparisonPanel({
 
         {viewMode === 'summary' ? (
           <>
-            {/* Line Chart */}
+            {/* Chart: when loaded data (useExternalComparison) use bar chart; else line chart */}
             <div style={{ marginBottom: 24 }}>
-              {cubeLoading ? (
+              {(cubeLoading || (useExternalComparison && priorLoading)) ? (
                 <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", fontSize: 13, minHeight: 240 }}>
                   Loading comparison data...
                 </div>
@@ -1131,6 +1449,51 @@ export default function ComparisonPanel({
                 <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--danger-text)', fontFamily: "'Inter', sans-serif", fontSize: 13, minHeight: 240 }}>
                   {yoyError}
                 </div>
+              ) : useExternalComparison && (!groupedChartData.length || !cubeData?.length) ? (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", fontSize: 13, minHeight: 240 }}>
+                  Load data to compare.
+                </div>
+              ) : useExternalComparison && groupedChartData.length > 0 ? (
+                <>
+                  <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 11, fontFamily: "'Inter', sans-serif", color: 'var(--text-tertiary)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center' }}>
+                      <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'var(--brand)', marginRight: 5 }} />
+                      Current Period
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center' }}>
+                      <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(255,255,255,0.2)', marginRight: 5 }} />
+                      Prior Period
+                    </span>
+                  </div>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={groupedChartData} margin={{ top: 24, right: 16, bottom: 8, left: 8 }} barCategoryGap="30%" barGap={3}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={true} vertical={false} />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.35)', fontFamily: "'JetBrains Mono', monospace" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.3)', fontFamily: "'JetBrains Mono', monospace" }}
+                        tickFormatter={(v) => (isPercentMetric ? `${v}%` : `$${(v / 1000).toFixed(0)}k`)}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip content={<GroupedBarTooltip />} />
+                      <Bar dataKey="current" name="Current" radius={[3, 3, 0, 0]} label={((props: Record<string, unknown>) => <CustomBarLabel {...(props as { x?: number; y?: number; width?: number; value?: number }) } isPercent={isPercentMetric} />) as any}>
+                        {groupedChartData.map((entry, i) => (
+                          <Cell key={i} fill={storeColorByKey[entry.name] ?? 'var(--brand)'} />
+                        ))}
+                      </Bar>
+                      <Bar dataKey="prior" name="Prior" radius={[3, 3, 0, 0]} label={((props: Record<string, unknown>) => <CustomBarLabel {...(props as { x?: number; y?: number; width?: number; value?: number }) } isPercent={isPercentMetric} />) as any}>
+                        {groupedChartData.map((entry, i) => (
+                          <Cell key={i} fill={storeColorByKey[entry.name] ?? 'var(--brand)'} fillOpacity={0.4} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </>
               ) : lineChartData.length < 3 && !hasCubeData && periodMode !== 'year' ? (
                 <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", fontSize: 13, minHeight: 240 }}>
                   Not enough data points for this view. Upload more weekly reports to see trends.
@@ -1175,27 +1538,27 @@ export default function ComparisonPanel({
               )}
             </div>
 
-            {/* Change Summary Cards */}
-            <div style={{ display: 'flex', gap: 12, overflowX: 'auto', marginBottom: 24, paddingBottom: 8 }}>
-              {comparisonData.map((data, i) => {
+            {/* Change Summary Cards — 3x2 grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
+              {comparisonData.map((data) => {
                 const store = stores.find((s) => s.number === data.storeNum)
                 const storeIdx = stores.findIndex((s) => s.number === data.storeNum)
-                const arrow = data.isImprovement ? '▲' : '▼'
-                const color = data.isImprovement ? 'var(--success-text)' : 'var(--danger-text)'
-                
+                const noComparison = (data as { pctChangeNull?: boolean }).pctChangeNull
+                const lowerIsBetter = activeMetric ? ['labor_pct', 'food_cost_pct', 'flm_pct'].includes(activeMetric) : false
+                const arrow = noComparison ? '' : data.isImprovement ? (lowerIsBetter ? '▼' : '▲') : (lowerIsBetter ? '▲' : '▼')
+                const pillColor = noComparison ? 'var(--text-tertiary)' : data.isImprovement ? 'var(--success-text)' : 'var(--danger-text)'
+                const vsLabel = useExternalComparison ? comparisonTabLabels[activeComparison].replace('vs ', '') : periodMode === 'week' ? 'last week' : periodMode === 'month' ? 'last month' : 'last year'
                 return (
                   <div
                     key={data.storeNum}
                     style={{
-                      minWidth: 180,
                       background: 'var(--bg-elevated)',
                       border: '1px solid var(--border-subtle)',
-                      borderRadius: 12,
+                      borderRadius: 10,
                       padding: 16,
-                      flexShrink: 0,
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                       <div
                         style={{
                           width: 8,
@@ -1208,16 +1571,33 @@ export default function ComparisonPanel({
                         {store?.name || `Store ${data.storeNum}`}
                       </div>
                     </div>
-                    <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 4 }}>
+                    <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 8 }}>
                       {activeMetricObj.fmt(data.current)}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                      <span style={{ color, fontSize: 14 }}>{arrow}</span>
-                      <span style={{ color }}>
-                        {data.pctChange >= 0 ? '+' : ''}
-                        {data.pctChange.toFixed(1)}% vs {periodMode === 'week' ? 'last week' : periodMode === 'month' ? 'last month' : 'last year'}
-                      </span>
-                    </div>
+                    {noComparison ? (
+                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>—</span>
+                    ) : (
+                      <>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '4px 10px',
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            fontFamily: "'JetBrains Mono', monospace",
+                            background: pillColor,
+                            color: '#fff',
+                            marginBottom: 4,
+                          }}
+                        >
+                          {arrow} {data.pctChange >= 0 ? '+' : ''}{data.pctChange.toFixed(1)}%
+                        </span>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                          vs {vsLabel}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )
               })}
@@ -1269,176 +1649,65 @@ export default function ComparisonPanel({
             </div>
           </>
         ) : (
-          /* Graph View - Visual Comparison */
+          /* Graph View — Grouped bar chart by store */
           <div>
-            {/* Side-by-Side Comparison Charts */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 20, marginBottom: 24 }}>
-              {comparisonData.map((data, i) => {
-                const store = stores.find((s) => s.number === data.storeNum)
-                const storeIdx = stores.findIndex((s) => s.number === data.storeNum)
-                const storeColor = storeColors[storeIdx % storeColors.length]
-                const arrow = data.isImprovement ? '▲' : '▼'
-                const changeColor = data.isImprovement ? 'var(--success-text)' : 'var(--danger-text)'
-                
-                // Build data for this store's comparison chart
-                const storeChartData = [
-                  {
-                    period: 'Previous',
-                    value: data.previous,
-                  },
-                  {
-                    period: 'Current',
-                    value: data.current,
-                  },
-                ]
-
-                return (
-                  <div
-                    key={data.storeNum}
-                    style={{
-                      background: 'var(--bg-elevated)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 12,
-                      padding: 20,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                      <div
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: '50%',
-                          background: storeColor,
-                        }}
-                      />
-                      <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>
-                        {store?.name || `Store ${data.storeNum}`}
-                      </div>
-                    </div>
-
-                    {/* Comparison Bar Chart */}
-                    <div style={{ marginBottom: 16 }}>
-                      <ResponsiveContainer width="100%" height={180}>
-                        <BarChart data={storeChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="1 3" stroke="var(--border-subtle)" />
-                          <XAxis
-                            dataKey="period"
-                            stroke="var(--text-tertiary)"
-                            tick={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fill: 'var(--text-tertiary)' }}
-                          />
-                          <YAxis
-                            stroke="var(--text-tertiary)"
-                            tick={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fill: 'var(--text-tertiary)' }}
-                            tickFormatter={(v) => (activeMetricObj.unit === '$' ? `$${(v / 1000).toFixed(0)}k` : `${v}%`)}
-                            domain={[
-                              (dataMin: number) => Math.max(0, Math.floor(dataMin * 0.9)),
-                              (dataMax: number) => Math.ceil(dataMax * 1.1),
-                            ]}
-                          />
-                          <Tooltip
-                            content={({ active, payload }) => {
-                              if (!active || !payload || !payload[0]) return null
-                              return (
-                                <div style={{ background: 'var(--bg-overlay)', border: '1px solid var(--border-default)', borderRadius: 8, padding: '12px 16px' }}>
-                                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", marginBottom: 4 }}>
-                                    {payload[0].payload.period}
-                                  </div>
-                                  <div style={{ fontSize: 13, fontWeight: 600, color: storeColor, fontFamily: "'JetBrains Mono', monospace" }}>
-                                    {activeMetricObj.fmt(payload[0].value as number)}
-                                  </div>
-                                </div>
-                              )
-                            }}
-                          />
-                          <Bar dataKey="value" fill={storeColor} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    {/* Values and Change */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTop: '1px solid var(--border-subtle)' }}>
-                      <div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, marginBottom: 4 }}>
-                          Previous
-                        </div>
-                        <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)' }}>
-                          {activeMetricObj.fmt(data.previous)}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, marginBottom: 4 }}>
-                          Change
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 16, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                          <span style={{ color: changeColor, fontSize: 18 }}>{arrow}</span>
-                          <span style={{ color: changeColor }}>
-                            {data.pctChange >= 0 ? '+' : ''}
-                            {data.pctChange.toFixed(1)}%
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, marginBottom: 4 }}>
-                          Current
-                        </div>
-                        <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-                          {activeMetricObj.fmt(data.current)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', marginBottom: 16 }}>
+              Current vs Prior by Store
             </div>
-
-            {/* Trend Line Chart - All Stores Over Time */}
-            <div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', marginBottom: 16 }}>
-                Trend Over Time
+            {(cubeLoading || (useExternalComparison && priorLoading)) ? (
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", fontSize: 13, minHeight: 260 }}>
+                Loading comparison data...
               </div>
-              {cubeLoading ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", fontSize: 13, minHeight: 240 }}>
-                  Loading comparison data...
+            ) : useExternalComparison && (!groupedChartData.length || !cubeData?.length) ? (
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", fontSize: 13, minHeight: 260 }}>
+                Load data to compare.
+              </div>
+            ) : groupedChartData.length === 0 ? (
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", fontSize: 13, minHeight: 260 }}>
+                No data available.
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 11, fontFamily: "'Inter', sans-serif", color: 'var(--text-tertiary)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center' }}>
+                    <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'var(--brand)', marginRight: 5 }} />
+                    Current Period
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center' }}>
+                    <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'rgba(255,255,255,0.2)', marginRight: 5 }} />
+                    Prior Period
+                  </span>
                 </div>
-              ) : yoyError ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--danger-text)', fontFamily: "'Inter', sans-serif", fontSize: 13, minHeight: 240 }}>
-                  {yoyError}
-                </div>
-              ) : lineChartData.length < 3 && !hasCubeData && periodMode !== 'year' ? (
-                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif", fontSize: 13, minHeight: 240 }}>
-                  Not enough data points for this view. Upload more weekly reports to see trends.
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={Math.max(240, 300)}>
-                  <LineChart data={lineChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="1 3" stroke="var(--border-subtle)" />
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={groupedChartData} margin={{ top: 24, right: 16, bottom: 8, left: 8 }} barCategoryGap="30%" barGap={3}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={true} vertical={false} />
                     <XAxis
-                      dataKey="week"
-                      stroke="var(--text-tertiary)"
-                      tick={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fill: 'var(--text-tertiary)' }}
+                      dataKey="name"
+                      tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.35)', fontFamily: "'JetBrains Mono', monospace" }}
+                      axisLine={false}
+                      tickLine={false}
                     />
                     <YAxis
-                      stroke="var(--text-tertiary)"
-                      tick={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fill: 'var(--text-tertiary)' }}
-                      tickFormatter={(v) => (activeMetricObj.unit === '$' ? `$${(v / 1000).toFixed(0)}k` : `${v}%`)}
-                      domain={[
-                        (dataMin: number) => Math.max(0, Math.floor(dataMin * 0.92)),
-                        (dataMax: number) => Math.ceil(dataMax * 1.08),
-                      ]}
+                      tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.3)', fontFamily: "'JetBrains Mono', monospace" }}
+                      tickFormatter={(v) => (isPercentMetric ? `${v}%` : `$${(v / 1000).toFixed(0)}k`)}
+                      axisLine={false}
+                      tickLine={false}
                     />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend
-                      wrapperStyle={{ fontSize: 12, fontFamily: "'Inter', sans-serif", color: 'var(--text-secondary)' }}
-                      formatter={legendLabel}
-                    />
-                    {target !== undefined && (
-                      <ReferenceLine y={target} stroke="var(--warning)" strokeDasharray="4 4" label={{ value: 'Target', position: 'right' }} />
-                    )}
-                    {isDualLineMode ? <DualLines /> : <SingleLines />}
-                  </LineChart>
+                    <Tooltip content={<GroupedBarTooltip />} />
+                    <Bar dataKey="current" name="Current" radius={[3, 3, 0, 0]} label={((props: Record<string, unknown>) => <CustomBarLabel {...(props as { x?: number; y?: number; width?: number; value?: number }) } isPercent={isPercentMetric} />) as any}>
+                      {groupedChartData.map((entry, i) => (
+                        <Cell key={i} fill={storeColorByKey[entry.name] ?? 'var(--brand)'} />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="prior" name="Prior" radius={[3, 3, 0, 0]} label={((props: Record<string, unknown>) => <CustomBarLabel {...(props as { x?: number; y?: number; width?: number; value?: number }) } isPercent={isPercentMetric} />) as any}>
+                      {groupedChartData.map((entry, i) => (
+                        <Cell key={i} fill={storeColorByKey[entry.name] ?? 'var(--brand)'} fillOpacity={0.4} />
+                      ))}
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
-              )}
-            </div>
+              </>
+            )}
           </div>
         )}
       </div>

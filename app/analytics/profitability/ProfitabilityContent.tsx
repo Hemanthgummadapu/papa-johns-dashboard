@@ -9,6 +9,7 @@ import {
   IDEAL_SPECIALTY_NAMES,
   type IdealSizeKey,
 } from '@/lib/idealFoodCost'
+import { ProfitEbitdaSection } from './ProfitEbitdaSection'
 
 type AggregatorResult = {
   menuPrice: number
@@ -84,12 +85,12 @@ function formatPercent(value: number): string {
 
 const STORE_GRID_IDS = ['2081', '2021', '2259', '2292', '2481', '3011'] as const
 const STORE_NAMES: Record<string, string> = {
-  '2081': 'Westhills',
   '2021': 'Tapo',
-  '2259': 'Northridge',
-  '2292': 'Canoga',
+  '2081': 'Chatsworth',
+  '2259': 'Canoga Park',
+  '2292': 'Westhills',
   '2481': 'Madera',
-  '3011': 'Chattsworth',
+  '3011': 'Northridge',
 }
 const STORE_TIER: Record<string, 'T1' | 'T2' | 'T3'> = {
   '2021': 'T1',
@@ -266,6 +267,8 @@ function MarginVerdictBadge({ marginPct }: { marginPct: number }) {
 }
 
 export function ProfitabilityContent() {
+  const Main = 'main' as keyof JSX.IntrinsicElements;
+  const [analyticsTab, setAnalyticsTab] = useState<'aggregator' | 'promo' | 'profit' | 'foodcost'>('aggregator')
   // ── Tool 1 — Aggregator Profitability Calculator ──────────────────────────────
   const [menuPrice, setMenuPrice] = useState(29)
   const [ddCommission, setDdCommission] = useState(27)
@@ -655,101 +658,123 @@ export function ProfitabilityContent() {
     foodCostPct,
     promoEstOrders,
     menuPrice,
-  ])
+  ]);
 
-  return (
-      <main className="mx-auto flex max-w-[1400px] gap-6 px-6 py-8">
-        {/* Sidebar nav — Analytics section */}
-        <aside className="w-64 shrink-0">
-          <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-            Analytics
-          </div>
-          <nav className="space-y-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between rounded-lg bg-[var(--bg-elevated)] px-3 py-2 text-left text-sm font-medium text-[var(--text-primary)]"
-            >
-              <span>Aggregator Profitability</span>
-              <span className="rounded-full bg-[var(--brand-subtle)] px-2 py-0.5 text-[10px] font-semibold text-[var(--brand)]">
-                Live
-              </span>
-            </button>
-            <button
-              type="button"
-              className="flex w-full cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-[var(--text-tertiary)]"
-            >
-              <span>Customer Mix (coming soon)</span>
-            </button>
-          </nav>
-        </aside>
+  const content = (
+    <Main style={{ padding: '24px 28px', maxWidth: 1440, margin: '0 auto' }}>
+        {/* Store context bar */}
+        <div
+          style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 10,
+            padding: '10px 20px',
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            STORE CONTEXT
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', flex: 1, minWidth: 200 }}>
+            Auto-fills ticket, food cost %, and platform discount from the latest cube pull.
+          </span>
+          {autoMetricsLoading && (
+            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Loading live data…</span>
+          )}
+          {autoMetricsError && !autoMetricsLoading && (
+            <span style={{ fontSize: 11, color: 'var(--warning-text, #f59e0b)' }}>Live data unavailable — using manual inputs.</span>
+          )}
+          <select
+            value={selectedStore}
+            onChange={(e) => setSelectedStore(e.target.value as typeof selectedStore)}
+            style={{
+              fontSize: 12,
+              padding: '4px 10px',
+              borderRadius: 6,
+              background: 'var(--bg-overlay)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-primary)',
+              fontFamily: 'inherit',
+              minWidth: 180,
+            }}
+          >
+            <option value="all">All Stores (group avg)</option>
+            <option value="2081">2081</option>
+            <option value="2021">2021</option>
+            <option value="2259">2259</option>
+            <option value="2292">2292</option>
+            <option value="2481">2481</option>
+            <option value="3011">3011</option>
+          </select>
+        </div>
 
-        <div className="flex-1 space-y-8">
-          {/* Store selector */}
-          <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-                  Store context
-                </div>
-                <div className="mt-1 text-sm text-[var(--text-secondary)]">
-                  Auto-fills ticket, food cost %, and platform discount from the latest cube pull.
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                {autoMetricsLoading && (
-                  <span className="text-[11px] text-[var(--text-tertiary)]">
-                    Loading live data…
-                  </span>
-                )}
-                {autoMetricsError && !autoMetricsLoading && (
-                  <span className="text-[11px] text-amber-400">
-                    Live data unavailable — using manual inputs.
-                  </span>
-                )}
-                <select
-                  value={selectedStore}
-                  onChange={(e) =>
-                    setSelectedStore(e.target.value as typeof selectedStore)
-                  }
-                  className="rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
-                >
-                  <option value="all">All Stores (group avg)</option>
-                  <option value="2081">2081</option>
-                  <option value="2021">2021</option>
-                  <option value="2259">2259</option>
-                  <option value="2292">2292</option>
-                  <option value="2481">2481</option>
-                  <option value="3011">3011</option>
-                </select>
-              </div>
-            </div>
-          </section>
-          {/* Tool 1 — Aggregator Profitability Calculator */}
+        {/* Sub-tab strip */}
+        <div
+          style={{
+            position: 'sticky',
+            top: 56,
+            zIndex: 40,
+            background: 'var(--bg-base, #0e1018)',
+            borderBottom: '1px solid var(--border-subtle)',
+            padding: '0 0',
+            marginBottom: 24,
+            display: 'flex',
+            gap: 0,
+          }}
+        >
+          {[
+            { key: 'aggregator' as const, label: 'Aggregator Profitability' },
+            { key: 'promo' as const, label: 'Promo Simulator' },
+            { key: 'profit' as const, label: 'Profit & EBITDA' },
+            { key: 'foodcost' as const, label: 'Food Cost Calculator' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setAnalyticsTab(tab.key)}
+              style={{
+                padding: '11px 20px',
+                fontSize: 13,
+                fontWeight: 500,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: "'Inter', sans-serif",
+                color: analyticsTab === tab.key ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                borderBottom: analyticsTab === tab.key ? '2px solid var(--brand)' : '2px solid transparent',
+                marginBottom: -1,
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {analyticsTab === 'aggregator' && (
           <section>
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                  Tool 1 — Aggregator Profitability Calculator
-                </h2>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  Adjust live with Brad to see DoorDash / UberEats margin vs carryout for a single order.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-              {/* Inputs */}
-              <div className="space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-                  Inputs
+            <div className="grid gap-5 lg:grid-cols-2" style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20 }}>
+              {/* Inputs panel */}
+              <div
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 12,
+                  padding: 24,
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 20 }}>
+                  INPUTS
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <div className="mb-1 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>Menu price (ticket, $)</span>
-                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                        Live
-                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)' }}>Live</span>
                     </div>
                     <input
                       type="number"
@@ -757,7 +782,7 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={menuPrice}
                       onChange={(e) => setMenuPrice(toNumber(e.target.value))}
-                      className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      style={{ background: 'var(--bg-overlay, #0e1018)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '8px 12px', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', width: '100%', marginBottom: 4 }}
                     />
                     <input
                       type="range"
@@ -766,15 +791,13 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={menuPrice}
                       onChange={(e) => setMenuPrice(toNumber(e.target.value))}
-                      className="mt-2 w-full accent-[var(--brand)]"
+                      style={{ width: '100%', accentColor: 'var(--brand)', height: 4, marginBottom: 16 }}
                     />
                   </div>
                   <div>
-                    <div className="mb-1 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>Platform discount ($ per order)</span>
-                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                        Live
-                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)' }}>Live</span>
                     </div>
                     <input
                       type="number"
@@ -782,7 +805,7 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={promoDiscount}
                       onChange={(e) => setPromoDiscount(toNumber(e.target.value))}
-                      className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      style={{ background: 'var(--bg-overlay, #0e1018)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '8px 12px', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', width: '100%', marginBottom: 4 }}
                     />
                     <input
                       type="range"
@@ -791,15 +814,13 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={promoDiscount}
                       onChange={(e) => setPromoDiscount(toNumber(e.target.value))}
-                      className="mt-2 w-full accent-[var(--brand)]"
+                      style={{ width: '100%', accentColor: 'var(--brand)', height: 4, marginBottom: 16 }}
                     />
                   </div>
                   <div>
-                    <div className="mb-1 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>DoorDash commission %</span>
-                      <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
-                        Manual
-                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', color: 'var(--text-tertiary)', border: '1px solid var(--border-subtle)' }}>Manual</span>
                     </div>
                     <input
                       type="number"
@@ -808,7 +829,7 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={ddCommission}
                       onChange={(e) => setDdCommission(toNumber(e.target.value))}
-                      className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      style={{ background: 'var(--bg-overlay, #0e1018)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '8px 12px', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', width: '100%', marginBottom: 4 }}
                     />
                     <input
                       type="range"
@@ -817,15 +838,13 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={ddCommission}
                       onChange={(e) => setDdCommission(toNumber(e.target.value))}
-                      className="mt-2 w-full accent-[var(--brand)]"
+                      style={{ width: '100%', accentColor: 'var(--brand)', height: 4, marginBottom: 16 }}
                     />
                   </div>
                   <div>
-                    <div className="mb-1 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>UberEats commission %</span>
-                      <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
-                        Manual
-                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', color: 'var(--text-tertiary)', border: '1px solid var(--border-subtle)' }}>Manual</span>
                     </div>
                     <input
                       type="number"
@@ -834,7 +853,7 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={ueCommission}
                       onChange={(e) => setUeCommission(toNumber(e.target.value))}
-                      className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      style={{ background: 'var(--bg-overlay, #0e1018)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '8px 12px', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', width: '100%', marginBottom: 4 }}
                     />
                     <input
                       type="range"
@@ -843,15 +862,13 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={ueCommission}
                       onChange={(e) => setUeCommission(toNumber(e.target.value))}
-                      className="mt-2 w-full accent-[var(--brand)]"
+                      style={{ width: '100%', accentColor: 'var(--brand)', height: 4, marginBottom: 16 }}
                     />
                   </div>
                   <div>
-                    <div className="mb-1 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>PJ digital fee % (platform)</span>
-                      <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
-                        Manual
-                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', color: 'var(--text-tertiary)', border: '1px solid var(--border-subtle)' }}>Manual</span>
                     </div>
                     <input
                       type="number"
@@ -860,7 +877,7 @@ export function ProfitabilityContent() {
                       step={0.1}
                       value={digitalFeePct}
                       onChange={(e) => setDigitalFeePct(toNumber(e.target.value))}
-                      className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      style={{ background: 'var(--bg-overlay, #0e1018)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '8px 12px', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', width: '100%', marginBottom: 4 }}
                     />
                     <input
                       type="range"
@@ -869,15 +886,13 @@ export function ProfitabilityContent() {
                       step={0.1}
                       value={digitalFeePct}
                       onChange={(e) => setDigitalFeePct(toNumber(e.target.value))}
-                      className="mt-2 w-full accent-[var(--brand)]"
+                      style={{ width: '100%', accentColor: 'var(--brand)', height: 4, marginBottom: 16 }}
                     />
                   </div>
                   <div>
-                    <div className="mb-1 flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>Food cost %</span>
-                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                        Live
-                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)' }}>Live</span>
                     </div>
                     <input
                       type="number"
@@ -886,7 +901,7 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={foodCostPct}
                       onChange={(e) => setFoodCostPct(toNumber(e.target.value))}
-                      className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      style={{ background: 'var(--bg-overlay, #0e1018)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '8px 12px', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', width: '100%', marginBottom: 4 }}
                     />
                     <input
                       type="range"
@@ -895,48 +910,49 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={foodCostPct}
                       onChange={(e) => setFoodCostPct(toNumber(e.target.value))}
-                      className="mt-2 w-full accent-[var(--brand)]"
+                      style={{ width: '100%', accentColor: 'var(--brand)', height: 4, marginBottom: 16 }}
                     />
                   </div>
                 </div>
-                <div className="mt-2 text-[11px] text-[var(--text-tertiary)]">
-                  <span className="font-semibold text-[var(--text-secondary)]">Note:</span>{' '}
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5, marginTop: 8 }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Note:</span>{' '}
                   Commission % fields are manual — enter from your DD/UE contract. Live fields pull from the most
                   recent cube snapshot.
                 </div>
-                <div className="mt-2 rounded-lg bg-[var(--bg-overlay)] px-3 py-2 text-xs text-[var(--text-tertiary)]">
-                  <span className="font-semibold text-[var(--text-secondary)]">Assumptions:</span>{' '}
+                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: '10px 14px', fontSize: 11, color: 'var(--text-tertiary)', border: '1px solid var(--border-subtle)', marginTop: 12 }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Assumptions:</span>{' '}
                   Single order view; platform commission and PJ digital fee are charged on full menu price (pre-discount);
                   carryout has no commission or digital fee.
                 </div>
               </div>
 
               {/* Outputs */}
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-                    Live output
-                  </div>
-                  <div className="text-[11px] text-[var(--text-tertiary)]">
-                    Menu: <span className="font-mono text-[var(--text-secondary)]">{formatCurrency(ddResult.menuPrice)}</span>
-                    {' · '}
-                    Customer pays: <span className="font-mono text-[var(--text-secondary)]">{formatCurrency(ddResult.customerPays)}</span>
-                  </div>
+              <div
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 12,
+                  padding: 24,
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 16 }}>
+                  LIVE OUTPUT
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid var(--border-subtle)' }}>
+                  Menu: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)' }}>{formatCurrency(ddResult.menuPrice)}</span>
+                  {' · '}
+                  Customer pays: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-secondary)' }}>{formatCurrency(ddResult.customerPays)}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 0 }}>
                   {/* DoorDash card */}
-                  <div className="rounded-xl border border-white/[0.06] bg-[var(--bg-surface)] p-5">
-                    <div className="mb-3 flex items-center justify-between">
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-                          DoorDash
-                        </div>
-                        <div className="text-sm font-semibold text-[var(--text-primary)]">
-                          {ddCommission.toFixed(1)}% commission · {digitalFeePct.toFixed(1)}% digital fee
-                        </div>
-                      </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>DOORDASH</span>
                     </div>
-                    <dl className="space-y-[8px] text-sm">
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 12 }}>
+                      {ddCommission.toFixed(1)}% commission · {digitalFeePct.toFixed(1)}% digital fee
+                    </div>
+                    <dl style={{ margin: 0, padding: 0 }}>
                       <div className="flex items-center justify-between">
                         <dt className="text-[var(--text-secondary)]">Menu Price (full ticket)</dt>
                         <dd className="font-mono text-[var(--text-primary)]">
@@ -1127,19 +1143,17 @@ export function ProfitabilityContent() {
                     </p>
                   </div>
 
+                  <div style={{ width: 1, background: 'var(--border-subtle)', margin: '0 16px', alignSelf: 'stretch' }} />
+
                   {/* UberEats card */}
-                  <div className="rounded-xl border border-white/[0.06] bg-[var(--bg-surface)] p-5">
-                    <div className="mb-3 flex items-center justify-between">
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-                          UberEats
-                        </div>
-                        <div className="text-sm font-semibold text-[var(--text-primary)]">
-                          {ueCommission.toFixed(1)}% commission · {digitalFeePct.toFixed(1)}% digital fee
-                        </div>
-                      </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>UBEREATS</span>
                     </div>
-                    <dl className="space-y-[8px] text-sm">
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 12 }}>
+                      {ueCommission.toFixed(1)}% commission · {digitalFeePct.toFixed(1)}% digital fee
+                    </div>
+                    <dl className="space-y-[8px] text-sm" style={{ margin: 0, padding: 0 }}>
                       <div className="flex items-center justify-between">
                         <dt className="text-[var(--text-secondary)]">Menu Price (full ticket)</dt>
                         <dd className="font-mono text-[var(--text-primary)]">
@@ -1333,46 +1347,36 @@ export function ProfitabilityContent() {
               </div>
             </div>
           </section>
+          )}
 
-          {/* Section divider */}
-          <div className="flex w-full items-center gap-4 py-2">
-            <div className="h-px flex-1 bg-[var(--border-subtle)]" />
-            <span className="shrink-0 text-xs font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
-              ——————— PROMO SIMULATOR ———————
-            </span>
-            <div className="h-px flex-1 bg-[var(--border-subtle)]" />
-          </div>
-
+          {analyticsTab === 'promo' && (
+          <>
           {/* Tool 2 — Promo Simulator */}
-          <section className="pt-[48px]">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                  Tool 2 — Promo Simulator
-                </h2>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  Model promo impact per order and monthly. Menu price, DD commission %, and food cost % are linked from Tool 1.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+          <section>
+            <div className="grid gap-6 lg:grid-cols-2" style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 20 }}>
               {/* Inputs */}
-              <div className="space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-                  Inputs
+              <div
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 12,
+                  padding: 24,
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 20 }}>
+                  INPUTS
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs text-[var(--text-tertiary)]">Menu Price $ (linked from Tool 1)</label>
-                  <div className="flex gap-2">
+                  <label style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, display: 'block' }}>Menu Price $ (linked from Tool 1)</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
                     <input
                       type="number"
                       min={0}
                       step={0.5}
                       value={menuPrice}
                       onChange={(e) => setMenuPrice(toNumber(e.target.value))}
-                      className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      style={{ flex: 1, background: 'var(--bg-overlay, #0e1018)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '8px 12px', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}
                     />
                     <input
                       type="range"
@@ -1381,24 +1385,30 @@ export function ProfitabilityContent() {
                       step={0.5}
                       value={menuPrice}
                       onChange={(e) => setMenuPrice(toNumber(e.target.value))}
-                      className="w-24 shrink-0 accent-[var(--brand)]"
+                      style={{ width: 80, accentColor: 'var(--brand)', height: 4 }}
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label className="mb-1 block text-xs text-[var(--text-tertiary)]">Promo Type</label>
-                  <div className="flex flex-wrap gap-2">
+                <div style={{ marginTop: 16 }}>
+                  <label style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 8, display: 'block' }}>Promo Type</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {(['BOGO', '% Off', '$ Off', 'Free Item'] as const).map((t) => (
                       <button
                         key={t}
                         type="button"
                         onClick={() => setPromoType(t)}
-                        className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                          promoType === t
-                            ? 'bg-[var(--brand)] text-white'
-                            : 'bg-[var(--bg-overlay)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
-                        }`}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          fontFamily: 'inherit',
+                          cursor: 'pointer',
+                          border: promoType === t ? 'none' : '1px solid var(--border-subtle)',
+                          background: promoType === t ? 'var(--brand)' : 'var(--bg-overlay)',
+                          color: promoType === t ? '#fff' : 'var(--text-tertiary)',
+                        }}
                       >
                         {t}
                       </button>
@@ -1781,17 +1791,37 @@ export function ProfitabilityContent() {
                     </div>
                   </dl>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${promoMarginVerdict.colorClass}`}>
+                    <span
+                      style={{
+                        background: 'rgba(239,68,68,0.12)',
+                        color: '#ef4444',
+                        border: '1px solid rgba(239,68,68,0.25)',
+                        padding: '4px 10px',
+                        borderRadius: 5,
+                        fontSize: 11,
+                        fontWeight: 600,
+                      }}
+                    >
                       Margin: {promoMarginVerdict.label}
                     </span>
-                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${promoMonthlyVerdict.colorClass}`}>
+                    <span
+                      style={{
+                        background: promoMonthlyVerdict.label === 'Avoid' ? 'rgba(239,68,68,0.08)' : 'rgba(234,179,8,0.08)',
+                        color: promoMonthlyVerdict.label === 'Avoid' ? '#ef4444' : '#eab308',
+                        border: promoMonthlyVerdict.label === 'Avoid' ? '1px solid rgba(239,68,68,0.15)' : '1px solid rgba(234,179,8,0.2)',
+                        padding: '4px 10px',
+                        borderRadius: 5,
+                        fontSize: 11,
+                        fontWeight: 600,
+                      }}
+                    >
                       {promoMonthlyVerdict.label}
                     </span>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
-                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
+                <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 14 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)', marginBottom: 8 }}>
                     Monthly Impact View
                   </div>
                   <dl className="space-y-1.5 text-sm">
@@ -1822,32 +1852,38 @@ export function ProfitabilityContent() {
           </section>
 
           {/* All Store Promo Impact Grid */}
-          <section>
-            <div className="mb-2">
-              <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                All Store Promo Impact — {currentPromoPresetName} applied to all stores
+          <section style={{ marginTop: 32 }}>
+            <div style={{ marginBottom: 20 }}>
+              <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+                All Store Impact — {currentPromoPresetName} applied to all stores
               </h2>
-              <p className="mt-1 text-xs text-[var(--text-secondary)]">
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 20 }}>
                 Promo inputs above apply to all stores. Card colors show urgency — Red needs volume, Green needs protection, Orange needs lift.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
               {STORE_GRID_IDS.map((storeId) => {
                 const data = cubeStoreGridData[storeId]
                 const tier = STORE_TIER[storeId] ?? 'T2'
-                const name = STORE_NAMES[storeId] ?? `Store ${storeId}`
+                const name = `${storeId} · ${STORE_NAMES[storeId] ?? storeId}`
                 if (!data || data.menuPrice <= 0) {
                   return (
                     <div
                       key={storeId}
-                      className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 opacity-60"
+                      style={{
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: 12,
+                        padding: 16,
+                        opacity: 0.8,
+                      }}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-[var(--text-primary)]">{storeId} · {name}</span>
-                        <span className="rounded bg-[var(--bg-overlay)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-tertiary)]">{tier}</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{storeId} · {name}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'var(--bg-overlay)', color: 'var(--text-tertiary)' }}>{tier}</span>
                       </div>
-                      <p className="mt-2 text-xs text-[var(--text-tertiary)]">No cube data — load store first</p>
+                      <p style={{ marginTop: 8, fontSize: 12, color: 'var(--text-tertiary)' }}>No cube data — load store first</p>
                     </div>
                   )
                 }
@@ -1938,13 +1974,19 @@ export function ProfitabilityContent() {
                 return (
                   <div
                     key={storeId}
-                    className={`rounded-xl border-2 ${borderColor} bg-[var(--bg-surface)] p-4`}
+                    style={{
+                      background: 'var(--bg-surface)',
+                      border: '2px solid',
+                      borderColor: tier === 'T3' || aggRatio > 0.8 ? 'rgba(34,197,94,0.6)' : tier === 'T2' || (aggRatio >= 0.5 && aggRatio <= 0.8) ? 'rgba(234,179,8,0.6)' : 'rgba(239,68,68,0.6)',
+                      borderRadius: 12,
+                      padding: 16,
+                    }}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[var(--text-primary)]">{storeId} · {name}</span>
-                      <span className="rounded bg-[var(--bg-overlay)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-tertiary)]">{tier}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{storeId} · {name}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'var(--bg-overlay)', color: 'var(--text-tertiary)' }}>{tier}</span>
                     </div>
-                    <dl className="mt-3 space-y-1 text-xs">
+                    <dl style={{ marginTop: 12, marginBottom: 0, padding: 0 }}>
                       <div className="flex justify-between">
                         <dt className="text-[var(--text-tertiary)]">Avg Ticket</dt>
                         <dd className="font-mono">{formatCurrency(data.menuPrice)}</dd>
@@ -1974,11 +2016,21 @@ export function ProfitabilityContent() {
                         </div>
                       )}
                     </dl>
-                    <div className="mt-3">
-                      <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold ${recClass}`}>
+                    <div style={{ marginTop: 10 }}>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '5px 12px',
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          width: 'fit-content',
+                          ...(recClass.includes('emerald') ? { background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)' } : recClass.includes('amber') ? { background: 'rgba(234,179,8,0.12)', color: '#eab308', border: '1px solid rgba(234,179,8,0.25)' } : { background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)' }),
+                        }}
+                      >
                         {recLabel}
                       </span>
-                      {recSubtext && <p className="mt-1 text-[10px] text-[var(--text-tertiary)]">{recSubtext}</p>}
+                      {recSubtext && <p style={{ marginTop: 6, fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>{recSubtext}</p>}
                     </div>
                   </div>
                 )
@@ -2013,56 +2065,82 @@ export function ProfitabilityContent() {
               const netPromoCost = totalMonthlyMarginWithPromo - totalMonthlyMarginNoPromo
 
               return (
-                <div className="mt-6 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-                    Group Summary
+                <div
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 10,
+                    padding: '14px 24px',
+                    marginTop: 20,
+                    display: 'flex',
+                    gap: 40,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 8, width: '100%' }}>GROUP SUMMARY</div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Total monthly margin with promo</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{formatCurrency(totalMonthlyMarginWithPromo)}</div>
                   </div>
-                  <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-[var(--text-secondary)]">Total monthly margin with promo</dt>
-                      <dd className="font-mono font-medium">{formatCurrency(totalMonthlyMarginWithPromo)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-[var(--text-secondary)]">Total monthly margin without promo</dt>
-                      <dd className="font-mono font-medium">{formatCurrency(totalMonthlyMarginNoPromo)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-[var(--text-secondary)]">Net promo cost to group</dt>
-                      <dd className="font-mono font-medium text-rose-400">{formatCurrency(netPromoCost)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <dt className="text-[var(--text-secondary)]">Total recovery orders needed group-wide</dt>
-                      <dd className="font-mono font-medium">{totalRecoveryOrders.toLocaleString()}</dd>
-                    </div>
-                  </dl>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Total monthly margin without promo</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{formatCurrency(totalMonthlyMarginNoPromo)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Net promo cost to group</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#ef4444' }}>{formatCurrency(netPromoCost)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Total recovery orders needed group-wide</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{totalRecoveryOrders.toLocaleString()}</div>
+                  </div>
                 </div>
               )
             })()}
           </section>
+          </>
+          )
+          }
 
-          {/* Tool 3 — Ideal Food Cost Calculator */}
+          {analyticsTab === 'profit' && (
+          <>
+          <ProfitEbitdaSection />
+          </>
+          )
+          }
+
+          {analyticsTab === 'foodcost' && (
+          <>
+          {/* Food Cost Calculator */}
           <section>
-            <div className="mb-4">
-              <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                Tool 3 — Ideal Food Cost Calculator
+            <div style={{ marginBottom: 20 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
+                Food Cost Calculator
               </h2>
-              <p className="text-xs text-[var(--text-secondary)]">
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 4 }}>
                 Build any pizza and see the theoretical ingredient cost. Compare to actual food cost % from cube to find variance.
               </p>
             </div>
-            <p className="mb-3 text-[11px] text-[var(--text-tertiary)]">
+            <p style={{ marginBottom: 20, fontSize: 11, color: 'var(--text-tertiary)' }}>
               {IDEAL_FOOD_COST_P3_2026.period} | Cheese Case: {formatCurrency(IDEAL_FOOD_COST_P3_2026.cheeseCasePrice)}
             </p>
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
-                <div className="mb-4 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Pizza builder</div>
-                <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2" style={{ gap: 20 }}>
+              <div
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 12,
+                  padding: 24,
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 20 }}>PIZZA BUILDER</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <div>
-                    <label className="mb-1 block text-xs text-[var(--text-secondary)]">Pizza type</label>
+                    <label style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 6, display: 'block' }}>Pizza type</label>
                     <select
                       value={idealPizzaType}
                       onChange={(e) => setIdealPizzaType(e.target.value)}
-                      className="w-full rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] px-3 py-2 text-sm text-[var(--text-primary)]"
+                      style={{ width: '100%', background: 'var(--bg-overlay, #0e1018)', border: '1px solid var(--border-subtle)', borderRadius: 6, padding: '8px 12px', fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}
                     >
                       {IDEAL_SPECIALTY_NAMES.map((name) => (
                         <option key={name} value={name}>{name}</option>
@@ -2070,14 +2148,24 @@ export function ProfitabilityContent() {
                     </select>
                   </div>
                   <div>
-                    <label className="mb-2 block text-xs text-[var(--text-secondary)]">Size</label>
-                    <div className="flex flex-wrap gap-2">
+                    <label style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 8, display: 'block' }}>Size</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {IDEAL_SIZE_OPTIONS.map(({ key, label }) => (
                         <button
                           key={key}
                           type="button"
                           onClick={() => setIdealSize(key)}
-                          className={`rounded-full px-4 py-1.5 text-sm font-semibold ${idealSize === key ? 'bg-[var(--brand)] text-white' : 'bg-[var(--bg-overlay)] text-[var(--text-secondary)]'}`}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: 6,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            fontFamily: 'inherit',
+                            cursor: 'pointer',
+                            background: idealSize === key ? 'var(--brand)' : 'var(--bg-overlay)',
+                            color: idealSize === key ? '#fff' : 'var(--text-tertiary)',
+                            border: idealSize === key ? 'none' : '1px solid var(--border-subtle)',
+                          }}
                         >
                           {label}
                         </button>
@@ -2086,16 +2174,16 @@ export function ProfitabilityContent() {
                   </div>
                   {idealPizzaType === 'Custom Pizza' && (
                     <div>
-                      <label className="mb-2 block text-xs text-[var(--text-secondary)]">Toppings</label>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                        {IDEAL_CUSTOM_TOPPING_NAMES.map((name) => (
-                          <label key={name} className="flex cursor-pointer items-center gap-2 text-sm text-[var(--text-primary)]">
-                            <input
-                              type="checkbox"
-                              checked={idealToppings.has(name)}
-                              onChange={() => toggleIdealTopping(name)}
-                              className="rounded border-[var(--border-default)]"
-                            />
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10, display: 'block' }}>Toppings</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 20px' }}>
+                      {IDEAL_CUSTOM_TOPPING_NAMES.map((name) => (
+                        <label key={name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={idealToppings.has(name)}
+                            onChange={() => toggleIdealTopping(name)}
+                            style={{ accentColor: 'var(--brand)', width: 14, height: 14 }}
+                          />
                             <span>{name.replace(/  2$/, '')}</span>
                           </label>
                         ))}
@@ -2126,7 +2214,7 @@ export function ProfitabilityContent() {
                     >
                       <option value="">Select store</option>
                       {STORE_GRID_IDS.map((id) => (
-                        <option key={id} value={id}>{id} {STORE_NAMES[id] ?? ''}</option>
+                        <option key={id} value={id}>{id} · {STORE_NAMES[id] ?? ''}</option>
                       ))}
                     </select>
                     {idealCubeLoading && idealStore && (
@@ -2136,26 +2224,33 @@ export function ProfitabilityContent() {
                 </div>
               </div>
               <div className="space-y-4">
-                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
-                  <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]">Ideal cost breakdown</div>
-                  <dl className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <dt className="text-[var(--text-secondary)]">Base (dough, sauce, cheese, box)</dt>
-                      <dd className="font-mono font-medium">{formatCurrency(idealCostResult.baseCost)}</dd>
+                <div
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 12,
+                    padding: 24,
+                  }}
+                >
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 16 }}>IDEAL COST BREAKDOWN</div>
+                  <dl style={{ margin: 0, padding: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                      <dt style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Base (dough, sauce, cheese, box)</dt>
+                      <dd style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(idealCostResult.baseCost)}</dd>
                     </div>
                     {idealCostResult.toppingLines.map((line) => (
-                      <div key={line.name} className="flex justify-between">
-                        <dt className="text-[var(--text-secondary)]">{line.name}</dt>
-                        <dd className="font-mono">{formatCurrency(line.cost)}</dd>
+                      <div key={line.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <dt style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{line.name}</dt>
+                        <dd style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(line.cost)}</dd>
                       </div>
                     ))}
-                    <div className="mt-2 flex justify-between border-t border-[var(--border-subtle)] pt-2">
-                      <dt className="font-semibold text-[var(--text-primary)]">Total ideal food cost</dt>
-                      <dd className="font-mono font-bold">{formatCurrency(idealCostResult.totalCost)}</dd>
+                    <div style={{ marginTop: 8, paddingTop: 10, borderTop: '2px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 700, fontSize: 14 }}>
+                      <dt style={{ color: 'var(--text-primary)' }}>Total ideal food cost</dt>
+                      <dd style={{ fontFamily: "'JetBrains Mono', monospace" }}>{formatCurrency(idealCostResult.totalCost)}</dd>
                     </div>
-                    <div className="flex justify-between">
-                      <dt className="text-[var(--text-secondary)]">Ideal food cost %</dt>
-                      <dd className="font-mono font-medium">{formatPercent(idealCostResult.idealPct)}</dd>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                      <dt style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Ideal food cost %</dt>
+                      <dd style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{formatPercent(idealCostResult.idealPct)}</dd>
                     </div>
                   </dl>
                 </div>
@@ -2212,8 +2307,12 @@ export function ProfitabilityContent() {
               </div>
             </div>
           </section>
+          </>
+          )
+          }
         </div>
-      </main>
-  )
+      </Main>
+  );
+  return content;
 }
 

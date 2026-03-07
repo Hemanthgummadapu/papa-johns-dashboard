@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import {
   LineChart,
   Line,
@@ -31,12 +31,28 @@ import { ProfitabilityContent } from '@/app/analytics/profitability/Profitabilit
 import YearOverYearUploadPanel from '@/components/YearOverYearUploadPanel'
 import YearOverYearPanel from '@/components/YearOverYearPanel'
 import SMGDashboardEmbed from '@/components/SMGDashboardEmbed'
+import NavBar from '@/components/NavBar'
 import { Lock, TrendingUp, Package, Users, Bell } from 'lucide-react'
 
 
 function roundPct(v: number): number {
   return Math.round(v * 10) / 10
 }
+
+const Skeleton = ({ width = '100%', height = 16, borderRadius = 4, style = {} }: {
+  width?: string | number
+  height?: number
+  borderRadius?: number
+  style?: React.CSSProperties
+}) => (
+  <div style={{
+    width, height, borderRadius,
+    background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+    backgroundSize: '200% 100%',
+    animation: 'shimmer 1.5s infinite',
+    ...style
+  }} />
+)
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type MetricKey = 'net_sales' | 'labor_pct' | 'food_cost_pct' | 'flm_pct' | 'cash_short' | 'doordash_sales' | 'ubereats_sales'
@@ -125,6 +141,27 @@ type CubeStoreRow = {
   grossMarginPerOrderUsd?: number | null
 }
 
+function getStoreHealth(store: CubeStoreRow, storeId: string): { label: string; color: string; bg: string; border: string } {
+  const issues: string[] = []
+  const laborTarget = ['2021', '2481'].includes(storeId) ? 30 : 25
+  const laborPct = store.totalLaborPct ?? store.laborPct ?? null
+  if (laborPct != null && laborPct > laborTarget) issues.push('Labor')
+
+  const flmPct = store.flmPct ?? null
+  if (flmPct != null && flmPct > 48) issues.push('FLM')
+
+  const foodCostPct = store.actualFoodPct ?? (store.netSales && store.foodCostUsd ? (store.foodCostUsd / store.netSales) * 100 : null)
+  if (foodCostPct != null && foodCostPct > 25) issues.push('Food')
+
+  const netSales = store.netSales ?? null
+  const lyNetSales = store.lyNetSales ?? null
+  if (netSales != null && lyNetSales != null && netSales < lyNetSales) issues.push('Sales ↓')
+
+  if (issues.length === 0) return { label: '✓ On Track', color: '#22c55e', bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.2)' }
+  if (issues.length === 1) return { label: '⚠ ' + issues[0], color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.2)' }
+  return { label: issues.length + ' issues', color: '#ef4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.2)' }
+}
+
 type UploadItem = {
   file: File
   name: string
@@ -207,14 +244,28 @@ const METRICS: Array<{
 ]
 
 const STORE_COLORS = ['var(--store-1)', 'var(--store-2)', 'var(--store-3)', 'var(--store-4)', 'var(--store-5)', 'var(--store-6)']
+/** Hex equivalents for alpha suffixes (e.g. badge background storeColor + '22') */
+const STORE_COLORS_HEX = ['#e8410a', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#06b6d4']
+
+const STORE_NAMES: Record<string, string> = {
+  '2021': 'Tapo',
+  '2081': 'Chatsworth',
+  '2259': 'Canoga Park',
+  '2292': 'Westhills',
+  '2481': 'Madera',
+  '3011': 'Northridge',
+}
+
+/** Hardcoded ideal food cost % for variance table and KPI (all stores). */
+const FOOD_COST_IDEAL = 23.0
 
 const DEFAULT_STORES: StoreUI[] = [
-  { id: '1', number: '2081', name: 'Store 2081', location: 'Westhills' },
-  { id: '2', number: '2021', name: 'Store 2021', location: 'Tapo' },
-  { id: '3', number: '2259', name: 'Store 2259', location: 'Northridge' },
-  { id: '4', number: '2292', name: 'Store 2292', location: 'Canoga' },
-  { id: '5', number: '2481', name: 'Store 2481', location: 'Madera' },
-  { id: '6', number: '3011', name: 'Store 3011', location: 'Chattsworth' },
+  { id: '1', number: '2081', name: '2081 · Chatsworth', location: 'Chatsworth' },
+  { id: '2', number: '2021', name: '2021 · Tapo', location: 'Tapo' },
+  { id: '3', number: '2259', name: '2259 · Canoga Park', location: 'Canoga Park' },
+  { id: '4', number: '2292', name: '2292 · Westhills', location: 'Westhills' },
+  { id: '5', number: '2481', name: '2481 · Madera', location: 'Madera' },
+  { id: '6', number: '3011', name: '3011 · Northridge', location: 'Northridge' },
 ]
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -496,7 +547,7 @@ function UploadPanel({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>
-                      Store {f.parsedData.store_number}
+                      {String(f.parsedData.store_number)} · {STORE_NAMES[String(f.parsedData.store_number)] ?? f.parsedData.store_number}
                     </span>
                     <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'JetBrains Mono', monospace" }}>
                       {formatDateShort(f.parsedData.date_start)} – {formatDateShort(f.parsedData.date_end)}
@@ -738,11 +789,36 @@ function KpiCard({
   const dddVal = cubeStore?.dddSales ?? (latest as any)?.doordash_sales ?? 0
   const aggregatorVal = cubeStore?.aggregatorSales ?? (latest as any)?.ubereats_sales ?? 0
   const compPct = (latest as any)?.comp_pct
-  const laborTarget = TARGETS.labor_pct ?? 28.68
-  const flmTarget = TARGETS.flm_pct ?? 55.11
-  const laborGood = laborPctVal != null && laborPctVal <= laborTarget
-  const flmGood = flmPctVal != null && flmPctVal < flmTarget
-  const foodGood = foodCostPctVal != null && (TARGETS.food_cost_pct == null || foodCostPctVal <= TARGETS.food_cost_pct)
+
+  // Labor %: 2481 and 2021 → target 30% (30–32 amber, >32 red); others → 25% (25–27 amber, >27 red)
+  const laborTargetStore = (store.number === '2481' || store.number === '2021') ? 30 : 25
+  const laborColor = laborPctVal != null
+    ? laborPctVal < laborTargetStore
+      ? '#22c55e'
+      : laborPctVal <= laborTargetStore + 2
+        ? '#f59e0b'
+        : '#ef4444'
+    : 'var(--text-tertiary)'
+  const laborBg = laborPctVal != null && laborPctVal > laborTargetStore + 2 ? 'var(--danger-subtle)' : 'var(--bg-base)'
+
+  // FLM %: <46 green, 46–48 amber, >48 red
+  const flmColor = flmPctVal != null
+    ? flmPctVal < 46
+      ? '#22c55e'
+      : flmPctVal <= 48
+        ? '#f59e0b'
+        : '#ef4444'
+    : 'var(--text-tertiary)'
+  const flmBg = flmPctVal != null && flmPctVal > 48 ? 'var(--danger-subtle)' : 'var(--bg-base)'
+
+  // Food cost %: <23 green, 23–25 amber, >25 red (same for $ value)
+  const foodCostColor = foodCostPctVal != null
+    ? foodCostPctVal < 23
+      ? '#22c55e'
+      : foodCostPctVal <= 25
+        ? '#f59e0b'
+        : '#ef4444'
+    : 'var(--text-primary)'
 
   const frontContent = (
     <div style={cardBaseStyle}>
@@ -794,9 +870,25 @@ function KpiCard({
               View →
             </button>
           )}
-          <div style={{ width: 24, height: 24, borderRadius: 5, background: `${storeColor}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: storeColor, fontWeight: 500 }}>
-            {store.number.slice(-2)}
-          </div>
+          {cubeStore ? (() => {
+            const health = getStoreHealth(cubeStore, store.number)
+            return (
+              <div style={{
+                fontSize: 10, fontWeight: 700, padding: '3px 9px',
+                borderRadius: 5, whiteSpace: 'nowrap',
+                background: health.bg,
+                color: health.color,
+                border: '1px solid ' + health.border
+              }}>
+                {health.label}
+              </div>
+            )
+          })() : (
+            <div style={{
+              width: 60, height: 20, borderRadius: 5,
+              background: 'rgba(255,255,255,0.04)'
+            }} />
+          )}
         </div>
       </div>
 
@@ -805,37 +897,39 @@ function KpiCard({
         <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Net Sales</div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(netSalesVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
-          <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{compPct != null ? (compPct >= 0 ? '↑' : '↓') + ' vs last year' : '—'}</div>
-              </div>
-        <div style={{ background: laborGood ? 'var(--bg-base)' : 'var(--danger-subtle)', borderRadius: 7, padding: '8px 10px' }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: laborGood ? 'var(--text-tertiary)' : 'var(--danger-text)', marginBottom: 4 }}>Labor %</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: laborGood ? 'var(--success-text)' : 'var(--danger-text)', lineHeight: 1.1 }}>{laborPctVal != null ? `${Number(laborPctVal).toFixed(1)}%` : '—'}</div>
-          <div style={{ fontSize: 10.5, color: laborGood ? 'var(--success-text)' : 'var(--danger-text)', marginTop: 2 }}>{laborGood ? `Target: ${laborTarget}%` : '↑ Over target'}</div>
-              </div>
-        <div style={{ background: flmGood ? 'var(--bg-base)' : 'var(--danger-subtle)', borderRadius: 7, padding: '8px 10px' }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: flmGood ? 'var(--text-tertiary)' : 'var(--danger-text)', marginBottom: 4 }}>FLM %</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: flmGood ? 'var(--success-text)' : 'var(--danger-text)', lineHeight: 1.1 }}>{flmPctVal != null ? `${Number(flmPctVal).toFixed(1)}%` : '—'}</div>
-          <div style={{ fontSize: 10.5, color: flmGood ? 'var(--success-text)' : 'var(--danger-text)', marginTop: 2 }}>Target: &lt;{flmTarget}%</div>
-            </div>
+          <div style={{ fontSize: 10.5, color: compPct != null ? (compPct < 0 ? '#ef4444' : compPct > 0 ? '#22c55e' : 'var(--text-primary)') : 'var(--text-tertiary)', marginTop: 2 }}>
+            {compPct != null ? (compPct < 0 ? `↓ ${Math.abs(compPct).toFixed(1)}%` : compPct > 0 ? `↑ ${compPct.toFixed(1)}%` : '—') : '—'} vs last year
+          </div>
+        </div>
+        <div style={{ background: laborBg, borderRadius: 7, padding: '8px 10px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Labor %</div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: laborColor, lineHeight: 1.1 }}>{laborPctVal != null ? `${Number(laborPctVal).toFixed(1)}%` : '—'}</div>
+          <div style={{ fontSize: 10.5, color: laborColor, marginTop: 2 }}>Target: {laborTargetStore}%</div>
+        </div>
+        <div style={{ background: flmBg, borderRadius: 7, padding: '8px 10px' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>FLM %</div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: flmColor, lineHeight: 1.1 }}>{flmPctVal != null ? `${Number(flmPctVal).toFixed(1)}%` : '—'}</div>
+          <div style={{ fontSize: 10.5, color: flmColor, marginTop: 2 }}>Target: &lt;46%</div>
+        </div>
         <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Food Cost</div>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: foodGood ? 'var(--text-primary)' : 'var(--danger-text)', lineHeight: 1.1 }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: foodCostColor, lineHeight: 1.1 }}>
             {foodCostUsdVal != null ? `$${Number(foodCostUsdVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : foodCostPctVal != null ? `${Number(foodCostPctVal).toFixed(1)}%` : '—'}
-      </div>
-          <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>{foodCostPctVal != null ? `${Number(foodCostPctVal).toFixed(1)}%` : '—'}</div>
           </div>
+          <div style={{ fontSize: 10.5, color: foodCostColor, marginTop: 2 }}>{foodCostPctVal != null ? `${Number(foodCostPctVal).toFixed(1)}%` : '—'}</div>
+        </div>
         <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>Aggregator</div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>
             ${Number(cubeStore ? (aggregatorVal ?? 0) : (Number(dddVal) + Number(aggregatorVal))).toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                </div>
-          <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>DD + UE + GH</div>
           </div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>DD + UE + GH</div>
+        </div>
         <div style={{ background: 'var(--bg-base)', borderRadius: 7, padding: '8px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 4 }}>DoorDash</div>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', lineHeight: 1.1 }}>${Number(dddVal).toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
           <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 2 }}>—</div>
-      </div>
+        </div>
       </div>
       {footerHint && (
         <div
@@ -976,7 +1070,7 @@ function ChartSection({
         {payload.map((p: any, i: number) => (
           <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif" }}>Store {p.dataKey}:</span>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif" }}>{p.dataKey} · {STORE_NAMES[p.dataKey] ?? p.dataKey}:</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: p.color, fontFamily: "'JetBrains Mono', monospace" }}>
               {metric.fmt(safeNum(p.value))}
             </span>
@@ -1040,7 +1134,7 @@ function ChartSection({
             <Tooltip content={<CustomTooltip />} />
             <Legend
               wrapperStyle={{ fontSize: 12, fontFamily: "'Inter', sans-serif", color: 'var(--text-secondary)' }}
-              formatter={(val) => `Store ${val}`}
+              formatter={(val) => `${val} · ${STORE_NAMES[val] ?? val}`}
             />
             {selectedStores.map((storeNum) => {
               const storeIdx = Math.abs(parseInt(storeNum, 10) || 0) % STORE_COLORS.length
@@ -1049,7 +1143,7 @@ function ChartSection({
                   key={storeNum}
                   dataKey={storeNum}
                   fill={STORE_COLORS[storeIdx]}
-                  name={`Store ${storeNum}`}
+                  name={`${storeNum} · ${STORE_NAMES[storeNum] ?? storeNum}`}
                 />
               )
             })}
@@ -1069,7 +1163,7 @@ function ChartSection({
             <Tooltip content={<CustomTooltip />} />
             <Legend
               wrapperStyle={{ fontSize: 12, fontFamily: "'Inter', sans-serif", color: 'var(--text-secondary)' }}
-              formatter={(val) => `Store ${val}`}
+              formatter={(val) => `${val} · ${STORE_NAMES[val] ?? val}`}
             />
             {selectedStores.map((storeNum) => {
               const storeIdx = Math.abs(parseInt(storeNum, 10) || 0) % STORE_COLORS.length
@@ -1189,7 +1283,29 @@ async function fetchReports(days: number): Promise<{ data: DailyReportWithStore[
 function getYesterdayDate(): string {
   const d = new Date()
   d.setDate(d.getDate() - 1)
-  return d.toISOString().split('T')[0]
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function timeToSeconds(t: string | null | undefined): number {
+  if (!t || !t.includes(':')) return 0
+  const parts = t.split(':').map(Number)
+  const [m, s] = parts.length >= 2 ? [parts[0], parts[1]] : [parts[0], 0]
+  return m * 60 + (Number.isNaN(s) ? 0 : s)
+}
+
+type LiveStoreForStatus = { labor_pct: number; avg_make_time: string | null; otd_time: string | null }
+function getLiveStatus(store: LiveStoreForStatus): { label: string; color: string; bg: string; border: string } {
+  const issues: string[] = []
+  if (store.labor_pct > 30) issues.push('labor')
+  if (timeToSeconds(store.avg_make_time) > timeToSeconds('4:00')) issues.push('make time')
+  if (timeToSeconds(store.otd_time) > timeToSeconds('25:00')) issues.push('OTD')
+
+  if (issues.length === 0) return { label: '✓ On Track', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.2)' }
+  if (issues.length === 1) return { label: '⚠ ' + issues[0], color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.2)' }
+  return { label: '● ' + issues.length + ' alerts', color: '#ef4444', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.2)' }
 }
 
 // TODO: Papa Johns fiscal week may start Sunday; ISO week is Monday/Thursday-based.
@@ -1331,7 +1447,7 @@ async function fetchCubeData(date: string, period: CubePeriod): Promise<{ data: 
           stores: {
             id: storeNumber,
             store_number: Number(storeNumber),
-            name: `Store ${storeNumber}`,
+            name: `${storeNumber} · ${STORE_NAMES[storeNumber] ?? storeNumber}`,
             location: '',
             created_at: new Date().toISOString(),
           },
@@ -1367,6 +1483,19 @@ export default function DashboardPage() {
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly') // weekly | monthly
   const [activeTab, setActiveTab] = useState<'dashboard' | 'trends' | 'operations' | 'analytics' | 'forecast' | 'live' | 'guest'>('dashboard')
   const [compareMode, setCompareMode] = useState(false) // compare mode toggle
+
+  // Sync activeTab from URL ?tab= so NavBar links to /dashboard?tab=operations etc. work
+  const searchParams = useSearchParams()
+  const pathname = usePathname()
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    const valid: Array<'dashboard' | 'operations' | 'analytics' | 'forecast' | 'live' | 'guest'> = ['dashboard', 'operations', 'analytics', 'forecast', 'live', 'guest']
+    if (tab && valid.includes(tab as any)) {
+      setActiveTab(tab as 'dashboard' | 'operations' | 'analytics' | 'forecast' | 'live' | 'guest')
+    } else if (!tab && (pathname === '/dashboard' || pathname === '/')) {
+      setActiveTab('dashboard')
+    }
+  }, [searchParams, pathname])
   const [trendPeriods, setTrendPeriods] = useState<Array<{ label: string; total: number; lyTotal?: number; sortKey: string; isCurrent?: boolean }>>([])
   const [trendLoading, setTrendLoading] = useState(false)
   const [trendsPeriod, setTrendsPeriod] = useState<'3M' | '6M' | '1Y' | '2Y' | '3Y'>('6M')
@@ -1477,6 +1606,8 @@ export default function DashboardPage() {
   const [auditTab, setAuditTab] = useState<'summary' | 'details' | 'fraud'>('summary')
   const [auditRefreshKey, setAuditRefreshKey] = useState(0)
   const [auditDetailsFilter, setAuditDetailsFilter] = useState<{ store?: string; manager?: string }>({})
+  const [auditUploadExpanded, setAuditUploadExpanded] = useState(false)
+  const [opsTab, setOpsTab] = useState<'labor' | 'audit'>('labor')
   const [laborTrendStore, setLaborTrendStore] = useState<string | null>(null)
   const [laborPctByStore, setLaborPctByStore] = useState<Record<string, number | null>>({})
   const [laborCubeLoading, setLaborCubeLoading] = useState(false)
@@ -1507,7 +1638,6 @@ export default function DashboardPage() {
   // Profit tab: P&L trailing chart
   const PROFIT_STORE_ALL = 'all'
   const PROFIT_STORES = ['2021', '2081', '2259', '2292', '2481', '3011']
-  const PROFIT_STORE_NAMES: Record<string, string> = { '2021': 'Tapo', '2081': 'Westhills', '2259': 'Northridge', '2292': 'Canoga', '2481': 'Madera', '3011': 'Chatsworth' }
   const [profitStore, setProfitStore] = useState<string>(PROFIT_STORES[0])
   const [profitRange, setProfitRange] = useState<'last3' | 'last6' | 'lySame'>('last3')
   const [profitMetricToggles, setProfitMetricToggles] = useState({ netSales: true, ebitda: true, labor: true, foodCost: true, flm: true })
@@ -1614,10 +1744,7 @@ export default function DashboardPage() {
     setLoadError(null)
     setCubeOffline(false)
     try {
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
-      const defaultDate = yesterday.toISOString().split('T')[0]
-      const dateToUse = overrideDate ?? (cubeDate || defaultDate)
+      const dateToUse = overrideDate ?? (cubeDate || getYesterdayDate())
       const periodToUse = overridePeriod ?? cubePeriod
       const [tyResult, lyResult] = await Promise.all([
         fetchCubeData(dateToUse, periodToUse),
@@ -2033,8 +2160,8 @@ export default function DashboardPage() {
         const store: StoreUI = {
           id: storeNumber,
           number: storeNumber,
-          name: `Store ${storeNumber}`,
-          location: DEFAULT_STORES.find((d) => d.number === storeNumber)?.location ?? '',
+          name: `${storeNumber} · ${STORE_NAMES[storeNumber] ?? storeNumber}`,
+          location: STORE_NAMES[storeNumber] ?? '',
         }
         storeMap.set(store.number, store)
         const netSales = s.netSales ?? 0
@@ -2519,6 +2646,12 @@ export default function DashboardPage() {
 
   return (
     <div style={{ background: 'var(--bg-base, #0a0b0f)', minHeight: '100vh', color: 'var(--text-primary, #f1f3f9)' }}>
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      `}} />
       {sessionExpired && (
         <div
           onClick={() => {
@@ -2538,149 +2671,43 @@ export default function DashboardPage() {
           ⚠️ Microsoft session expired — extranet login required. Click here to re-authenticate.
         </div>
       )}
-      {/* Header — 56px height, compact tabs per mockup */}
-      <div style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)', padding: '0 28px' }}>
-        <div style={{ maxWidth: 1440, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            <div
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 7,
-                background: 'var(--brand)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 11,
-                fontWeight: 700,
-                color: '#fff',
-                letterSpacing: '0.03em',
-              }}
-            >
-              PJ
-            </div>
-            <div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>Papa Johns Ops</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400, marginTop: -2 }}>
-                {stores.length} store{stores.length === 1 ? '' : 's'} · Reporting
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
-              style={{
-                padding: '6px 13px',
-                borderRadius: 6,
-                border: 'none',
-                cursor: 'pointer',
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 13,
-                fontWeight: activeTab === 'dashboard' ? 600 : 500,
-                background: activeTab === 'dashboard' ? 'var(--brand)' : 'transparent',
-                color: activeTab === 'dashboard' ? '#fff' : 'var(--text-tertiary)',
-                transition: 'color 0.15s, background 0.15s',
-              }}
-            >
-              Dashboard
-            </button>
-            <Link
-              href="/trends"
-              style={{
-                padding: '6px 13px',
-                borderRadius: 6,
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 13,
-                fontWeight: 500,
-                background: 'transparent',
-                color: 'var(--text-tertiary)',
-                textDecoration: 'none',
-                transition: 'color 0.15s, background 0.15s',
-              }}
-              className="tab-btn"
-            >
-              Trends
-            </Link>
-            {[
-              ['operations', 'Operations'],
-              ['analytics', 'Analytics'],
-              ['forecast', 'Forecast'],
-              ['live', 'Live'],
-              ['guest', 'Guest'],
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key as 'operations' | 'analytics' | 'forecast' | 'live' | 'guest')}
-                className={`tab-btn ${activeTab === key ? 'active' : ''}`}
-                style={{
-                  padding: '6px 13px',
-                  borderRadius: 6,
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: 13,
-                  fontWeight: activeTab === key ? 600 : 500,
-                  background: activeTab === key ? 'var(--brand)' : 'transparent',
-                  color: activeTab === key ? '#fff' : 'var(--text-tertiary)',
-                  transition: 'color 0.15s, background 0.15s',
-                }}
-              >
-                {label}
-              </button>
-            ))}
-            <Link
-              href="/ai"
-              style={{
-                padding: '6px 13px',
-                borderRadius: 6,
-                fontFamily: "'Inter', sans-serif",
-                fontSize: 13,
-                fontWeight: 500,
-                background: 'transparent',
-                color: 'var(--text-tertiary)',
-                textDecoration: 'none',
-                transition: 'color 0.15s, background 0.15s',
-              }}
-              className="tab-btn"
-            >
-              ✦ AI
-            </Link>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+      {/* Header — shared NavBar with dashboard-specific right content */}
+      <NavBar
+        rightContent={
+          <>
             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-tertiary)' }}>
               {lastUpdated ? `Updated ${lastUpdated}` : ''}
             </span>
-              <span
-                style={{
+            <span
+              style={{
                 padding: '3px 8px',
                 borderRadius: 5,
-                  fontSize: 10,
-                  fontWeight: 500,
-                  fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 10,
+                fontWeight: 500,
+                fontFamily: "'JetBrains Mono', monospace",
                 letterSpacing: '0.06em',
                 border: '1px solid var(--border-default)',
                 background: 'transparent',
                 color: 'var(--text-secondary)',
-                }}
-              >
-                {dataSource === 'cube' && activeCubeDate
+              }}
+            >
+              {dataSource === 'cube' && activeCubeDate
                 ? `CUBE · ${formatCubeDateLabel(activeCubeDate, cubePeriod)}`
-                  : dataSource === 'cube'
-                    ? 'LIVE CUBE'
-                    : isRealData
-                      ? 'LIVE DATA'
-                      : 'DEMO DATA'}
-              </span>
-            </div>
-          </div>
-        </div>
+                : dataSource === 'cube'
+                  ? 'LIVE CUBE'
+                  : isRealData
+                    ? 'LIVE DATA'
+                    : 'DEMO DATA'}
+            </span>
+          </>
+        }
+      />
 
-      {/* Alert banner — labor / EBITDA warnings (dashboard tab, when cube data loaded) */}
+      {/* Alert banner — labor / EBITDA warnings (dashboard tab, when cube data loaded); skeleton when cube and no data */}
       {activeTab === 'dashboard' && (() => {
+        if (dataSource === 'cube' && !cubeData?.length) {
+          return <Skeleton height={36} borderRadius={8} style={{ marginBottom: 16 }} />
+        }
         const alerts: { storeName: string; message: string }[] = []
         const laborTarget = TARGETS.labor_pct ?? 28.68
         if (dataSource === 'cube' && cubeData?.length) {
@@ -2690,11 +2717,11 @@ export default function DashboardPage() {
             if (!store || !row) return
             const laborPct = row.totalLaborPct ?? row.laborPct ?? null
             if (laborPct != null && laborPct > laborTarget) {
-              alerts.push({ storeName: `${store.name} ${store.location}`, message: `Labor % at ${laborPct.toFixed(1)}% exceeds target.` })
+              alerts.push({ storeName: store.name, message: `Labor % at ${laborPct.toFixed(1)}% exceeds target.` })
             }
             const ebitda = row.restaurantLevelEbitda
             if (ebitda != null && ebitda < 0) {
-              alerts.push({ storeName: `${store.name} ${store.location}`, message: `EBITDA negative for current period.` })
+              alerts.push({ storeName: store.name, message: `EBITDA negative for current period.` })
             }
           })
         }
@@ -2722,6 +2749,29 @@ export default function DashboardPage() {
                 {' — '}{a.message}
               </span>
             ))}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              marginLeft: 'auto', flexShrink: 0,
+              padding: '2px 10px',
+              borderLeft: '1px solid rgba(255,255,255,0.08)',
+              paddingLeft: 16,
+            }}>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+                🔔
+              </span>
+              <span style={{
+                fontSize: 10, color: 'rgba(255,255,255,0.3)',
+                whiteSpace: 'nowrap'
+              }}>
+                SMS & email alerts
+              </span>
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: '1px 6px',
+                borderRadius: 4, background: 'rgba(232,68,26,0.1)',
+                color: 'var(--brand)', border: '1px solid rgba(232,68,26,0.2)',
+                letterSpacing: '0.05em'
+              }}>SOON</span>
+            </div>
       </div>
         )
       })()}
@@ -2828,19 +2878,47 @@ export default function DashboardPage() {
           </div>
         )} */}
 
-        {/* OPERATIONS TAB — Labor + Audit */}
+        {/* OPERATIONS TAB — Labor + Audit with sub-tabs */}
         {!loading && activeTab === 'operations' && (
           <div className="fade-in">
-            {/* Labor section (same as former Labor tab) */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <div>
-                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>HotSchedules Labor</div>
-                <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
-                  Scheduled vs actual hours by store and category
-                </div>
-              </div>
+            {/* Sub-tab strip — same style as Trends page */}
+            <div
+              style={{
+                borderBottom: '1px solid var(--border-subtle)',
+                marginBottom: 24,
+                display: 'flex',
+                gap: 0,
+              }}
+            >
+              {[
+                { key: 'labor' as const, label: '📅 HotSchedules Labor' },
+                { key: 'audit' as const, label: '🔍 Audit' },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setOpsTab(tab.key)}
+                  style={{
+                    padding: '10px 18px',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontFamily: "'Inter', sans-serif",
+                    color: opsTab === tab.key ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    borderBottom: opsTab === tab.key ? '2px solid var(--brand)' : '2px solid transparent',
+                    marginBottom: -1,
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
+            {/* LABOR SUB-TAB */}
+            {opsTab === 'labor' && (
+              <>
             {laborError && (
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 24 }}>
                 <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 8, color: 'var(--danger-text)' }}>Error</div>
@@ -2877,55 +2955,61 @@ export default function DashboardPage() {
               const storeOrder = ['2021', '2081', '2259', '2292', '2481', '3011'].filter((sn) => weekRows.some((r) => r.store_number === sn))
               return (
                 <>
-                  {/* Summary bar (above week dropdown) — styled like Live tab LIVE/STALE banner */}
+                  {/* Summary bar — slim KPI row */}
                   <div
                     style={{
-                      padding: '12px 16px',
-                      marginBottom: 16,
-                      borderRadius: 8,
                       background: 'var(--bg-surface)',
                       border: '1px solid var(--border-subtle)',
+                      borderRadius: 10,
+                      padding: '12px 20px',
                       display: 'flex',
                       flexWrap: 'wrap',
                       alignItems: 'center',
-                      gap: 24,
+                      gap: 32,
+                      marginBottom: 20,
                       fontFamily: "'Inter', sans-serif",
-                      fontSize: 12,
-                      fontWeight: 600,
                     }}
                   >
-                    <span style={{ color: 'var(--text-tertiary)' }}>Total scheduled</span>
-                    <span style={{ color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>{fmtHr(totalSchedWeek)}h</span>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Total actual</span>
-                    <span style={{ color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>{fmtHr(totalActualWeek)}h</span>
-                    <span style={{ color: 'var(--text-tertiary)' }}>Variance (actual − scheduled)</span>
-                    <span
-                      style={{
-                        color: varianceWeek > 0 ? 'var(--danger-text)' : varianceWeek < 0 ? 'var(--success-text)' : 'var(--text-secondary)',
-                        fontFamily: "'JetBrains Mono', monospace",
-                      }}
-                    >
-                      {varianceWeek >= 0 ? '+' : ''}{fmtHr(varianceWeek)}h
-                    </span>
-                    <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 400, color: 'var(--text-tertiary)' }}>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Total scheduled</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>{fmtHr(totalSchedWeek)}h</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Total actual</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>{fmtHr(totalActualWeek)}h</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Variance</div>
+                      <div
+                        style={{
+                          fontSize: 18,
+                          fontWeight: 700,
+                          fontFamily: "'JetBrains Mono', monospace",
+                          color: varianceWeek > 0 ? '#ef4444' : varianceWeek < 0 ? '#22c55e' : 'var(--text-primary)',
+                        }}
+                      >
+                        {varianceWeek >= 0 ? '+' : ''}{fmtHr(varianceWeek)}h
+                      </div>
+                    </div>
+                    <div style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11, fontWeight: 400, color: 'var(--text-tertiary)' }}>
                       Data synced daily from HotSchedules via Tableau
-                    </span>
+                    </div>
                   </div>
 
-                  {/* Week selector */}
+                  {/* Week selector — slim controls bar style */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif'" }}>Week:</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif" }}>Week</span>
                     <select
                       value={selectedWeek}
                       onChange={(e) => setLaborSelectedWeek(e.target.value)}
                       style={{
-                        padding: '8px 12px',
-                        borderRadius: 8,
+                        padding: '4px 10px',
+                        borderRadius: 6,
                         border: '1px solid var(--border-subtle)',
-                        background: 'var(--bg-surface)',
+                        background: 'var(--bg-overlay)',
                         color: 'var(--text-primary)',
                         fontFamily: "'Inter', sans-serif",
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: 500,
                         minWidth: 140,
                       }}
@@ -2939,7 +3023,7 @@ export default function DashboardPage() {
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
                       gap: 16,
                     }}
                   >
@@ -2954,7 +3038,6 @@ export default function DashboardPage() {
                       const totalSched = (current.total_scheduled_hours ?? (current.instore_scheduled_hours + current.manager_scheduled_hours + current.driver_scheduled_hours))
                       const totalActual = (current.total_actual_hours ?? (current.instore_actual_hours + current.manager_actual_hours + current.driver_actual_hours))
                       const vTotal = totalSched != null && totalActual != null ? totalSched - totalActual : null
-                      const borderColor = totalActual > totalSched ? 'var(--danger-text)' : totalActual < totalSched ? 'var(--success-text)' : 'var(--border-subtle)'
                       const rowsForStore = byStore[storeNum] ?? []
                       const sortedStore = [...rowsForStore].sort((a, b) => (b.week_bd || '').localeCompare(a.week_bd || ''))
                       const trendData = sortedStore
@@ -2967,34 +3050,33 @@ export default function DashboardPage() {
                         }))
                         .filter((d) => d.scheduled !== 0 || d.actual !== 0)
                       const showTrend = laborTrendStore === storeNum
+                      const targetPct = LABOR_TARGETS[storeNum] ?? 28
+                      const laborPct = laborPctByStore[storeNum]
                       return (
                         <div
                           key={storeNum}
                           style={{
-                            background: 'var(--bg-surface)',
+                            background: 'var(--bg-card, #1a1d27)',
                             border: '1px solid var(--border-subtle)',
-                            borderRadius: 12,
-                            padding: 20,
-                            position: 'relative',
-                            overflow: 'hidden',
+                            borderRadius: 10,
+                            padding: 16,
                           }}
                         >
-                          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: borderColor }} />
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                             <div>
-                              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>Store {storeNum}</div>
-                              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>{current.week}</div>
+                              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', fontFamily: "'Inter', sans-serif" }}>{storeNum} · {STORE_NAMES[storeNum] ?? storeNum}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2, fontFamily: "'Inter', sans-serif" }}>{current.week}</div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <button
                                 type="button"
                                 onClick={() => setLaborTrendStore(showTrend ? null : storeNum)}
                                 style={{
-                                  padding: '6px 12px',
-                                  borderRadius: 6,
+                                  padding: '4px 10px',
+                                  borderRadius: 5,
                                   border: '1px solid var(--border-subtle)',
                                   background: showTrend ? 'var(--bg-overlay)' : 'transparent',
-                                  color: 'var(--text-secondary)',
+                                  color: 'var(--text-tertiary)',
                                   fontSize: 11,
                                   fontWeight: 600,
                                   fontFamily: "'Inter', sans-serif",
@@ -3003,56 +3085,51 @@ export default function DashboardPage() {
                               >
                                 {showTrend ? 'Hide Trend' : 'Show Trend'}
                               </button>
-                              <div style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: storeColor, fontWeight: 500 }}>
+                              <div style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: storeColor, fontWeight: 600 }}>
                                 {storeNum.slice(-2)}
                               </div>
                             </div>
                           </div>
-                          <div style={{ display: 'grid', gap: 10, fontSize: 12, fontFamily: "'Inter', sans-serif'" }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 60px', gap: '0 8px', alignItems: 'center', fontSize: 12, fontFamily: "'Inter', sans-serif'" }}>
                             {[
                               { label: 'Instore', sched: current.instore_scheduled_hours, actual: current.instore_actual_hours, v: vInstore },
                               { label: 'Manager', sched: current.manager_scheduled_hours, actual: current.manager_actual_hours, v: vManager },
                               { label: 'Driver', sched: current.driver_scheduled_hours, actual: current.driver_actual_hours, v: vDriver },
                             ].map(({ label, sched, actual, v }) => (
-                              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--bg-base)', borderRadius: 8 }}>
-                                <span style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>{label}</span>
-                                <span style={{ color: 'var(--text-primary)' }}>Sched: {fmtHr(sched)}h</span>
-                                <span style={{ color: 'var(--text-primary)' }}>Actual: {fmtHr(actual)}h</span>
-                                <span style={{ color: v != null ? (v < 0 ? 'var(--danger-text)' : v > 0 ? 'var(--success-text)' : 'var(--text-primary)') : 'var(--text-primary)', fontWeight: 600 }}>
+                              <Fragment key={label}>
+                                <div style={{ padding: '5px 0', borderTop: '1px solid var(--border-subtle)' }}>
+                                  <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: 'var(--bg-overlay)', color: 'var(--text-secondary)' }}>{label}</span>
+                                </div>
+                                <div style={{ padding: '5px 0', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>{fmtHr(sched)}h</div>
+                                <div style={{ padding: '5px 0', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>{fmtHr(actual)}h</div>
+                                <div style={{ padding: '5px 0', borderTop: '1px solid var(--border-subtle)', fontWeight: 600, color: v != null ? (v < 0 ? '#ef4444' : v > 0 ? '#22c55e' : 'var(--text-primary)') : 'var(--text-primary)' }}>
                                   {v != null ? (v >= 0 ? `+${fmtHr(v)}` : fmtHr(v)) : '—'}h
-                                </span>
-                              </div>
+                                </div>
+                              </Fragment>
                             ))}
                           </div>
-                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.08em' }}>TOTAL</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>{fmtHr(totalSched)}h sched</span>
-                              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>{fmtHr(totalActual)}h actual</span>
-                              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: vTotal != null ? (vTotal < 0 ? 'var(--danger-text)' : vTotal > 0 ? 'var(--success-text)' : 'var(--text-primary)') : 'var(--text-primary)' }}>
-                                {vTotal != null ? (vTotal >= 0 ? `+${fmtHr(vTotal)}` : fmtHr(vTotal)) : '—'}h
-                              </span>
+                          <div style={{ marginTop: 4, paddingTop: 8, borderTop: '2px solid var(--border-subtle)', display: 'grid', gridTemplateColumns: '80px 1fr 1fr 60px', gap: '0 8px', alignItems: 'center', fontSize: 13, fontWeight: 700, fontFamily: "'Inter', sans-serif'" }}>
+                            <div>TOTAL</div>
+                            <div style={{ color: 'var(--text-primary)' }}>{fmtHr(totalSched)}h</div>
+                            <div style={{ color: 'var(--text-primary)' }}>{fmtHr(totalActual)}h</div>
+                            <div style={{ color: vTotal != null ? (vTotal < 0 ? '#ef4444' : vTotal > 0 ? '#22c55e' : 'var(--text-primary)') : 'var(--text-primary)' }}>
+                              {vTotal != null ? (vTotal >= 0 ? `+${fmtHr(vTotal)}` : fmtHr(vTotal)) : '—'}h
                             </div>
                           </div>
-                          {/* Labor % from cube (weekly) for selected week */}
                           <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.08em' }}>LABOR %</span>
+                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.05em' }}>LABOR %</span>
                             {laborCubeLoading ? (
-                              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>—</span>
+                              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>—</span>
                             ) : (
                               <span
                                 style={{
-                                  fontSize: 13,
-                                  fontWeight: 600,
+                                  fontSize: 16,
+                                  fontWeight: 700,
                                   fontFamily: "'JetBrains Mono', monospace",
-                                  color: (() => {
-                                    const pct = laborPctByStore[storeNum]
-                                    if (pct == null) return 'var(--text-primary)'
-                                    return pct > 28 ? 'var(--danger-text)' : 'var(--success-text)'
-                                  })(),
+                                  color: laborPct != null ? (laborPct > targetPct ? '#ef4444' : '#22c55e') : 'var(--text-primary)',
                                 }}
                               >
-                                {laborPctByStore[storeNum] != null ? `${laborPctByStore[storeNum]}%` : '—'}
+                                {laborPct != null ? `${laborPct}%` : '—'}
                               </span>
                             )}
                           </div>
@@ -3086,23 +3163,13 @@ export default function DashboardPage() {
                 </div>
               </div>
             )}
+              </>
+            )}
 
-            {/* Section divider */}
-            <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '32px 0' }} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 16, fontFamily: "'Inter', sans-serif" }}>
-              Audit — Zero, Bad & Canceled Orders
-            </div>
-
-            {/* SECTION 2 — AUDIT */}
-            <div style={{ marginBottom: 20 }}>
-              <AuditUpload
-                selectedTimePeriod={auditPeriod}
-                onUploadComplete={() => {
-                  setAuditRefreshKey((k) => k + 1)
-                }}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 0 }}>
+            {/* AUDIT SUB-TAB */}
+            {opsTab === 'audit' && (
+              <>
+            <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '1px solid var(--border-subtle)' }}>
               {[
                 { value: 'current_period' as const, label: 'Current Period' },
                 { value: 'last_period' as const, label: 'Last Period' },
@@ -3113,15 +3180,16 @@ export default function DashboardPage() {
                   type="button"
                   onClick={() => setAuditPeriod(tab.value)}
                   style={{
-                    padding: '10px 20px',
-                    borderRadius: 8,
-                    border: 'none',
-                    fontFamily: "'Inter', sans-serif",
+                    padding: '10px 18px',
                     fontSize: 13,
-                    fontWeight: 600,
+                    fontWeight: 500,
+                    background: 'transparent',
+                    border: 'none',
                     cursor: 'pointer',
-                    background: auditPeriod === tab.value ? 'var(--brand)' : 'transparent',
-                    color: auditPeriod === tab.value ? '#fff' : 'var(--text-tertiary)',
+                    fontFamily: "'Inter', sans-serif",
+                    color: auditPeriod === tab.value ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    borderBottom: auditPeriod === tab.value ? '2px solid var(--brand)' : '2px solid transparent',
+                    marginBottom: -1,
                   }}
                 >
                   {tab.label}
@@ -3131,22 +3199,23 @@ export default function DashboardPage() {
             <div style={{ marginBottom: 24 }}>
               <AuditSummaryComparisonTable period={auditPeriod} refreshKey={auditRefreshKey} />
             </div>
-            <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '1px solid var(--border-subtle)' }}>
               {(['summary', 'details', 'fraud'] as const).map((tab) => (
                 <button
                   key={tab}
                   type="button"
                   onClick={() => setAuditTab(tab)}
                   style={{
-                    padding: '10px 20px',
-                    borderRadius: 8,
-                    border: 'none',
-                    fontFamily: "'Inter', sans-serif",
+                    padding: '10px 18px',
                     fontSize: 13,
-                    fontWeight: 600,
+                    fontWeight: 500,
+                    background: 'transparent',
+                    border: 'none',
                     cursor: 'pointer',
-                    background: auditTab === tab ? 'var(--brand)' : 'transparent',
-                    color: auditTab === tab ? '#fff' : 'var(--text-tertiary)',
+                    fontFamily: "'Inter', sans-serif",
+                    color: auditTab === tab ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    borderBottom: auditTab === tab ? '2px solid var(--brand)' : '2px solid transparent',
+                    marginBottom: -1,
                   }}
                 >
                   {tab === 'summary' ? 'Summary' : tab === 'details' ? 'Details' : 'Fraud Flags'}
@@ -3173,15 +3242,72 @@ export default function DashboardPage() {
                 }}
               />
             )}
+
+            {/* Upload section — at bottom, expand/collapse */}
+            <div style={{ marginTop: 32 }}>
+              <button
+                type="button"
+                onClick={() => setAuditUploadExpanded((e) => !e)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: "'Inter', sans-serif",
+                  background: 'transparent',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-tertiary)',
+                  cursor: 'pointer',
+                }}
+              >
+                {auditUploadExpanded ? '▲' : '▼'} Upload Tableau Data
+              </button>
+              {auditUploadExpanded && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    background: 'var(--bg-card, #1a1d27)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 10,
+                    padding: 20,
+                  }}
+                >
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12 }}>Upload Tableau Data</div>
+                  <AuditUpload
+                    embedded
+                    selectedTimePeriod={auditPeriod}
+                    onUploadComplete={() => {
+                      setAuditRefreshKey((k) => k + 1)
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+              </>
+            )}
           </div>
         )}
 
         {/* FORECAST TAB */}
         {!loading && activeTab === 'forecast' && (
           <div className="fade-in">
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>Sales & Labor Forecast</div>
-              <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 16, color: 'var(--text-primary)' }}>Sales & Labor Forecast</div>
+              <div
+                style={{
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 10,
+                  padding: '10px 16px',
+                  marginBottom: 16,
+                  fontSize: 12,
+                  color: 'var(--text-tertiary)',
+                  fontFamily: "'Inter', sans-serif",
+                }}
+              >
                 {`Next 2 weeks at a time, projected from LY same-week sales × current 4-week comp trend (WK${Math.max(1, getCurrentWeekNumber(FORECAST_YEAR) - 4)}–WK${Math.max(1, getCurrentWeekNumber(FORECAST_YEAR) - 1)})`}
               </div>
             </div>
@@ -3314,8 +3440,17 @@ export default function DashboardPage() {
 
               return (
                 <>
-                  <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 16px', marginBottom: 12, fontFamily: "'Inter', sans-serif", fontSize: 13 }}>
-                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <div
+                    style={{
+                      background: 'var(--bg-surface)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 10,
+                      padding: '14px 20px',
+                      marginBottom: 20,
+                      fontFamily: "'Inter', sans-serif",
+                    }}
+                  >
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
                       Forecasting WK{forecastWindowStart}–WK{forecastWindowStart + 1} {FORECAST_YEAR} • Total projected: {fmtUsd(totalProjByWeek[0])} (WK{forecastWindowStart}) | {fmtUsd(totalProjByWeek[1])} (WK{forecastWindowStart + 1})
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
@@ -3364,7 +3499,7 @@ export default function DashboardPage() {
                           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: storeColor }} />
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>Store {r.storeNum}</span>
+                              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{r.storeNum} · {STORE_NAMES[r.storeNum] ?? r.storeNum}</span>
                               <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: storeColor, fontWeight: 500 }}>
                                 {r.storeNum.slice(-2)}
                               </span>
@@ -3378,17 +3513,19 @@ export default function DashboardPage() {
                                   padding: '4px 6px',
                                   border: 'none',
                                   borderRadius: 6,
-                                  background: forecastWindowStart <= minForecastWindowStart ? 'var(--bg-overlay)' : 'var(--bg-base)',
-                                  color: forecastWindowStart <= minForecastWindowStart ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                                  background: 'transparent',
+                                  color: 'var(--text-tertiary)',
                                   fontSize: 14,
                                   cursor: forecastWindowStart <= minForecastWindowStart ? 'not-allowed' : 'pointer',
                                   lineHeight: 1,
                                 }}
+                                onMouseEnter={(e) => { if (forecastWindowStart > minForecastWindowStart) { e.currentTarget.style.color = 'var(--text-primary)' } }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)' }}
                                 aria-label="Previous 2 weeks"
                               >
                                 ←
                               </button>
-                              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: 'var(--text-secondary)', minWidth: 100, textAlign: 'center' }}>
+                              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: 'var(--text-tertiary)', minWidth: 100, textAlign: 'center' }}>
                                 WK{forecastWindowStart}–WK{forecastWindowStart + 1} {FORECAST_YEAR}
                               </span>
                               <button
@@ -3398,12 +3535,14 @@ export default function DashboardPage() {
                                   padding: '4px 6px',
                                   border: 'none',
                                   borderRadius: 6,
-                                  background: 'var(--bg-base)',
-                                  color: 'var(--text-primary)',
+                                  background: 'transparent',
+                                  color: 'var(--text-tertiary)',
                                   fontSize: 14,
                                   cursor: 'pointer',
                                   lineHeight: 1,
                                 }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)' }}
                                 aria-label="Next 2 weeks"
                               >
                                 →
@@ -3413,36 +3552,40 @@ export default function DashboardPage() {
                           {r.lyFallback && (
                             <div style={{ fontSize: 9, color: 'var(--warning-text)', marginBottom: 4, fontFamily: "'Inter', sans-serif'" }}>LY data unavailable — using trend</div>
                           )}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, minWidth: 0 }}>
-                            {[currentIdx0, currentIdx1].map((idx) => (
-                              <div key={idx} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: 8 }}>
-                                <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 4, fontFamily: "'Inter', sans-serif", letterSpacing: '0.04em' }}>{`WK${minForecastWindowStart + idx} ${FORECAST_YEAR}`}</div>
-                                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", marginBottom: 6 }}>
-                                  LY {r.lySales[idx] != null ? fmtUsd(r.lySales[idx]) : '—'}  •  Comp {fmtPct(r.compPct)}  →  Applied {fmtPct(r.adjustedComp)}
-                                </div>
-                                <div style={{ marginBottom: 6 }}>
-                                  <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-tertiary)', letterSpacing: '0.06em', fontFamily: "'Inter', sans-serif'" }}>PROJ SALES</div>
-                                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700, color: '#fff' }}>{fmtUsd(r.projSales[idx])}</span>
-                                    <span style={{ color: 'var(--danger-text)', fontSize: 14 }}>↓</span>
+                          <div style={{ display: 'flex', alignItems: 'stretch', minWidth: 0 }}>
+                            {[currentIdx0, currentIdx1].map((idx, colIdx) => (
+                              <Fragment key={idx}>
+                                {colIdx === 1 && (
+                                  <div style={{ width: 1, background: 'var(--border-subtle)', margin: '0 12px', alignSelf: 'stretch' }} />
+                                )}
+                                <div style={{ flex: 1, background: 'var(--bg-base)', borderRadius: 8, padding: 8 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', marginBottom: 6, fontFamily: "'Inter', sans-serif" }}>{`WK${minForecastWindowStart + idx} ${FORECAST_YEAR}`}</div>
+                                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", marginBottom: 8, lineHeight: 1.4 }}>
+                                    LY {r.lySales[idx] != null ? fmtUsd(r.lySales[idx]) : '—'}  ·  Comp {fmtPct(r.compPct)} → Applied {fmtPct(r.adjustedComp)}
+                                  </div>
+                                  <div style={{ marginBottom: 6 }}>
+                                    <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-tertiary)', marginBottom: 2, fontFamily: "'Inter', sans-serif'" }}>PROJ SALES</div>
+                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 20, fontWeight: 700, color: '#fff' }}>{fmtUsd(r.projSales[idx])}</span>
+                                      <span style={{ color: 'var(--danger-text)', fontSize: 14 }}>↓</span>
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11, fontFamily: "'Inter', sans-serif'", color: 'var(--text-tertiary)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                                      <span>VARIANCE</span>
+                                      <Lock size={10} style={{ color: 'rgba(255,255,255,0.15)', flexShrink: 0 }} />
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                                      <span>PROJ LABOR $</span>
+                                      <Lock size={10} style={{ color: 'rgba(255,255,255,0.15)', flexShrink: 0 }} />
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                                      <span>HOURS NEEDED</span>
+                                      <Lock size={10} style={{ color: 'rgba(255,255,255,0.15)', flexShrink: 0 }} />
+                                    </div>
                                   </div>
                                 </div>
-                                <div style={{ height: 1, background: 'var(--border-subtle)', margin: '6px 0' }} />
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 9, fontFamily: "'Inter', sans-serif'", color: 'var(--text-tertiary)' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ letterSpacing: '0.04em', fontWeight: 600 }}>VARIANCE</span>
-                                    <Lock size={12} style={{ color: 'var(--text-tertiary)', opacity: 0.5 }} />
-                                  </div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ letterSpacing: '0.04em', fontWeight: 600 }}>PROJ LABOR $</span>
-                                    <Lock size={12} style={{ color: 'var(--text-tertiary)', opacity: 0.5 }} />
-                                  </div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ letterSpacing: '0.04em', fontWeight: 600 }}>HOURS NEEDED</span>
-                                    <Lock size={12} style={{ color: 'var(--text-tertiary)', opacity: 0.5 }} />
-                                  </div>
-                                </div>
-                              </div>
+                              </Fragment>
                             ))}
                           </div>
                           <div style={{ marginTop: 8, height: 80 }}>
@@ -3487,7 +3630,7 @@ export default function DashboardPage() {
                 >
                   <option value={PROFIT_STORE_ALL}>All Stores</option>
                   {PROFIT_STORES.map((s) => (
-                    <option key={s} value={s}>{s} {PROFIT_STORE_NAMES[s] ?? ''}</option>
+                    <option key={s} value={s}>{s} {STORE_NAMES[s] ?? ''}</option>
                   ))}
                 </select>
               </div>
@@ -3535,7 +3678,7 @@ export default function DashboardPage() {
               const hasData = isAllStores ? allStoresHaveData : singleStoreData.length > 0
               if (!hasData) return null
               const dataForChart = isAllStores ? [] : singleStoreData
-              const storeName = PROFIT_STORE_NAMES[profitStore] ?? profitStore
+              const storeName = STORE_NAMES[profitStore] ?? profitStore
               const nPeriods = dataForChart.length
               const chartData = dataForChart.map((d) => ({
                 ...d,
@@ -3665,7 +3808,7 @@ export default function DashboardPage() {
                         const miniDollarMin = miniMin < 0 ? Math.floor(miniMin / 10000) * 10000 - 5000 : 0
                         return (
                           <div key={storeNum} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 12 }}>
-                            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 8 }}>{PROFIT_STORE_NAMES[storeNum] ?? storeNum}</div>
+                            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 8 }}>{STORE_NAMES[storeNum] ?? storeNum}</div>
                             <div style={{ height: 200 }}>
                               <ResponsiveContainer width="100%" height={200}>
                                 <ComposedChart data={miniData} margin={{ top: 8, right: 8, left: 4, bottom: 4 }}>
@@ -3807,139 +3950,158 @@ export default function DashboardPage() {
 
         {/* LIVE TAB */}
         {!loading && activeTab === 'live' && (
-          <div className="fade-in">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <div className="fade-in" style={{ background: '#0e1018' }}>
+            {/* Header row — slim single bar */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 20,
+                background: '#0e1018',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 10,
+                padding: '10px 16px',
+              }}
+            >
               <div>
-                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>Live Store Data</div>
-                <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
-                  Real-time KPI data from Papa Johns extranet
-                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Live Store Data</div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Real-time KPI · Papa Johns extranet</div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                {liveLastUpdated && (() => {
-                  const minsAgo = Math.floor((Date.now() - liveLastUpdated.getTime()) / 60000)
-                  const isStale = minsAgo > 20
-                  return (
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        fontFamily: "'Inter', sans-serif",
-                        color: isStale ? 'var(--danger-text)' : 'var(--success-text)',
-                      }}
-                    >
-                      {isStale ? `⚠ STALE — last scraped ${minsAgo} mins ago` : '● LIVE'}
-                    </div>
-                  )
-                })()}
-                {liveLastUpdated && (
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
-                    Last updated: {liveLastUpdated.toLocaleTimeString()}
-                  </div>
-                )}
-                {liveLastUpdated && (
-                  <div style={{ fontSize: 12, color: refreshCountdown > 0 ? 'var(--text-secondary)' : 'var(--info-text)', fontFamily: "'JetBrains Mono', monospace" }}>
-                    {refreshCountdown > 0 ? `Next refresh in ${formatCountdown(refreshCountdown)}` : 'Next refresh: Due now'}
-                  </div>
-                )}
-                {isRefreshing && (
-                  <div style={{ fontSize: 12, color: 'var(--info-text)', fontFamily: "'Inter', sans-serif", display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 12, height: 12, border: '2px solid var(--info-text)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                    Refreshing...
-                  </div>
-                )}
-                {/* Refresh Now: reloads latest data from Supabase via /api/live-data only (no scrape; Railway cron runs /api/cron every 15 min) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#22c55e', fontWeight: 700 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px #22c55e', animation: 'pulse 2s infinite' }} />
+                  LIVE
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                  Last updated: {liveLastUpdated ? liveLastUpdated.toLocaleTimeString() : '—'}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', padding: '3px 10px', borderRadius: 6, background: '#0e1018', border: '1px solid var(--border-subtle)' }}>
+                  Next refresh in {formatCountdown(refreshCountdown)}
+                </div>
                 <button
+                  type="button"
                   onClick={() => void fetchLiveData()}
                   disabled={liveLoading}
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: 8,
-                    border: 'none',
-                    background: liveLoading ? 'var(--bg-overlay)' : 'var(--brand)',
-                    color: '#fff',
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: 13,
+                    padding: '5px 12px',
+                    borderRadius: 6,
+                    fontSize: 12,
                     fontWeight: 600,
-                    letterSpacing: '0.04em',
+                    background: 'var(--brand)',
+                    color: '#fff',
+                    border: 'none',
                     cursor: liveLoading ? 'not-allowed' : 'pointer',
                     opacity: liveLoading ? 0.7 : 1,
                   }}
-                  onMouseEnter={(e) => {
-                    if (!liveLoading) {
-                      e.currentTarget.style.background = 'var(--brand-hover)'
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!liveLoading) {
-                      e.currentTarget.style.background = 'var(--brand)'
-                    }
-                  }}
                 >
-                  {liveLoading ? 'Loading...' : 'Refresh Now'}
+                  ↻ Refresh Now
                 </button>
               </div>
             </div>
 
             {liveError && (
-              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 24 }}>
+              <div style={{ background: '#0e1018', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 20, marginBottom: 24 }}>
                 <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 8, color: 'var(--danger-text)' }}>Error</div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif" }}>{liveError}</div>
               </div>
             )}
 
             {liveLoading && liveData.length === 0 && (
-              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 40, textAlign: 'center' }}>
+              <div style={{ background: '#0e1018', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 40, textAlign: 'center' }}>
                 <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>Loading live data...</div>
-                <div style={{ height: 2, borderRadius: 1, background: 'var(--bg-elevated)', width: '100%', maxWidth: 400, margin: '0 auto' }} />
+                <div style={{ height: 2, borderRadius: 1, background: '#0e1018', width: '100%', maxWidth: 400, margin: '0 auto' }} />
               </div>
             )}
 
             {!liveLoading && liveData.length > 0 && (
-              <div 
-                style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', 
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
                   gap: 16,
                   opacity: isRefreshing ? 0.6 : 1,
                   transition: 'opacity 0.3s ease',
-                  position: 'relative'
+                  position: 'relative',
                 }}
               >
                 {liveData.map((store) => {
                   const storeIdx = parseInt(store.store_number) % STORE_COLORS.length
                   const storeColor = STORE_COLORS[storeIdx]
-                  const laborColor = store.labor_pct > 30 ? 'var(--danger-text)' : 'var(--success-text)'
-                  
-                  // Parse time in MM:SS format to total minutes
+                  const storeColorHex = STORE_COLORS_HEX[storeIdx]
+                  const laborTarget = LABOR_TARGETS[store.store_number] ?? 28
+                  const laborColor =
+                    store.labor_pct < laborTarget
+                      ? 'var(--success-text)'
+                      : store.labor_pct <= laborTarget + 2
+                        ? 'var(--warning-text)'
+                        : 'var(--danger-text)'
+
                   const parseTimeToMinutes = (timeStr: string | null): number | null => {
                     if (!timeStr) return null
                     const parts = timeStr.split(':')
                     if (parts.length === 2) {
                       const minutes = parseFloat(parts[0]) || 0
                       const seconds = parseFloat(parts[1]) || 0
-                      return minutes + (seconds / 60)
+                      return minutes + seconds / 60
                     }
                     return null
                   }
-                  
+
                   const otdMinutes = parseTimeToMinutes(store.otd_time)
-                  const otdColor = otdMinutes !== null ? (otdMinutes > 18 ? 'var(--danger-text)' : 'var(--success-text)') : 'var(--text-primary)'
+                  const otdColor =
+                    otdMinutes === null
+                      ? 'var(--text-primary)'
+                      : otdMinutes <= 20
+                        ? 'var(--success-text)'
+                        : otdMinutes <= 25
+                          ? 'var(--warning-text)'
+                          : 'var(--danger-text)'
+
                   const makeMinutes = parseTimeToMinutes(store.avg_make_time)
-                  const makeColor = makeMinutes !== null ? (makeMinutes < 4 ? 'var(--success-text)' : 'var(--danger-text)') : 'var(--text-primary)'
-                  
+                  const makeColor =
+                    makeMinutes === null
+                      ? 'var(--text-primary)'
+                      : makeMinutes <= 3
+                        ? 'var(--success-text)'
+                        : makeMinutes <= 4
+                          ? 'var(--warning-text)'
+                          : 'var(--danger-text)'
+
+                  const compNumeric =
+                    store.comp_pct != null
+                      ? typeof store.comp_pct === 'number'
+                        ? store.comp_pct
+                        : parseFloat(String(store.comp_pct).replace('%', '').replace('+', '').trim())
+                      : null
+                  const compVsLyLine =
+                    compNumeric != null && !Number.isNaN(compNumeric)
+                      ? `${compNumeric < 0 ? '↓' : '↑'} ${compNumeric < 0 ? '' : '+'}${compNumeric.toFixed(2)}% vs LY`
+                      : null
+
+                  const cellStyle = {
+                    background: '#0e1018',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: 7,
+                    padding: '10px 12px',
+                  }
+                  const labelStyle = { fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.08em', color: 'var(--text-tertiary)', marginBottom: 6 }
+                  const valueStyle = { fontSize: 17, fontWeight: 700, lineHeight: 1.2, fontFamily: "'JetBrains Mono', monospace" }
+                  const subStyle = { fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }
+
                   return (
                     <div
                       key={store.store_number}
+                      className="live-card"
                       onClick={() => {
                         setSelectedStore(store)
                         setShowStoreModal(true)
                       }}
                       style={{
-                        background: 'var(--bg-surface)',
-                        border: '1px solid var(--border-subtle)',
+                        background: '#161822',
+                        border: '1px solid rgba(255,255,255,0.07)',
                         borderRadius: 12,
-                        padding: 20,
+                        padding: 16,
                         position: 'relative',
                         overflow: 'hidden',
                         cursor: 'pointer',
@@ -3950,7 +4112,7 @@ export default function DashboardPage() {
                         e.currentTarget.style.transform = 'translateY(-2px)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = 'var(--border-subtle)'
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'
                         e.currentTarget.style.transform = 'none'
                       }}
                     >
@@ -3962,141 +4124,91 @@ export default function DashboardPage() {
                           right: 0,
                           height: 3,
                           background: storeColor,
+                          borderRadius: '12px 12px 0 0',
                         }}
                       />
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingTop: 8 }}>
                         <div>
-                          <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>
-                            Store {store.store_number}
-                          </div>
-                          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{store.store_number} · {STORE_NAMES[store.store_number] ?? store.store_number}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
                             {new Date(store.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </div>
                         </div>
-                        <div
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: 6,
-                            background: 'var(--bg-overlay)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 11,
-                            fontFamily: "'JetBrains Mono', monospace",
-                            color: storeColor,
-                            fontWeight: 500,
-                          }}
-                        >
-                          {store.store_number.slice(-2)}
-                        </div>
+                        {(() => {
+                          const status = getLiveStatus(store)
+                          return (
+                            <div style={{
+                              fontSize: 10, fontWeight: 700, padding: '3px 8px',
+                              borderRadius: 5, whiteSpace: 'nowrap',
+                              background: status.bg, color: status.color,
+                              border: '1px solid ' + status.border
+                            }}>
+                              {status.label}
+                            </div>
+                          )
+                        })()}
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                        {/* Total Net Sales */}
-                        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                            TOTAL NET SALES
-                          </div>
-                          <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 4 }}>
-                            ${store.total_net_sales.toLocaleString()}
-                          </div>
-                          {store.ly_net_sales > 0 && (
-                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
-                              LY: ${store.ly_net_sales.toLocaleString()}
-                              {store.comp_pct !== null && store.comp_pct !== undefined && (
-                                (() => {
-                                  const raw = store.comp_pct
-                                  const numeric =
-                                    typeof raw === 'number'
-                                      ? raw
-                                      : parseFloat(String(raw).replace('%', '').replace('+', '').trim())
-                                  const isNegative = !Number.isNaN(numeric) && numeric < 0
-                                  const display =
-                                    typeof raw === 'number'
-                                      ? `${numeric > 0 ? '+' : ''}${numeric.toFixed(2)}%`
-                                      : String(raw)
-
-                                  return (
-                                    <span
-                                      style={{
-                                        color: isNegative ? 'var(--danger-text)' : 'var(--success-text)',
-                                        marginLeft: 4,
-                                      }}
-                                    >
-                                      {display}
-                                </span>
-                                  )
-                                })()
-                              )}
-                            </div>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(3, 1fr)',
+                          gap: 8,
+                        }}
+                      >
+                        {/* Row 1: NET SALES | LABOR % | OTD TIME */}
+                        <div className="live-cell" style={cellStyle}>
+                          <div style={labelStyle}>NET SALES</div>
+                          <div style={{ ...valueStyle, color: 'var(--text-primary)' }}>${store.total_net_sales.toLocaleString()}</div>
+                          {compVsLyLine != null && (
+                            <div style={{ ...subStyle, color: 'var(--text-tertiary)' }}>{compVsLyLine}</div>
                           )}
                         </div>
-
-                        {/* Labor % */}
-                        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                            LABOR %
-                          </div>
-                          <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: laborColor }}>
-                            {store.labor_pct.toFixed(2)}%
-                          </div>
-                          {store.labor_dollars > 0 && (
-                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", marginTop: 4 }}>
-                              ${store.labor_dollars.toLocaleString()}
-                            </div>
-                          )}
+                        <div className="live-cell" style={cellStyle}>
+                          <div style={labelStyle}>LABOR %</div>
+                          <div style={{ ...valueStyle, color: laborColor }}>{store.labor_pct.toFixed(2)}%</div>
+                          {store.labor_dollars > 0 && <div style={subStyle}>${store.labor_dollars.toLocaleString()}</div>}
+                        </div>
+                        <div className="live-cell" style={cellStyle}>
+                          <div style={labelStyle}>OTD TIME</div>
+                          <div style={{ ...valueStyle, color: otdColor }}>{store.otd_time || 'N/A'}</div>
                         </div>
 
-                        {/* OTD Time */}
-                        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                            OTD TIME
-                          </div>
-                          <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: otdColor }}>
-                            {store.otd_time || 'N/A'}
-                          </div>
+                        {/* Row 2: AVG MAKE TIME | DELIVERY ORDERS | CARRYOUT % */}
+                        <div className="live-cell" style={cellStyle}>
+                          <div style={labelStyle}>AVG MAKE TIME</div>
+                          <div style={{ ...valueStyle, color: makeColor }}>{store.avg_make_time || 'N/A'}</div>
                         </div>
-
-                        {/* Avg Make Time */}
-                        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                            AVG MAKE TIME
-                          </div>
-                          <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: makeColor }}>
-                            {store.avg_make_time || 'N/A'}
-                          </div>
+                        <div className="live-cell" style={cellStyle}>
+                          <div style={labelStyle}>DELIVERY ORDERS</div>
+                          <div style={{ ...valueStyle, color: 'var(--text-primary)' }}>{store.delivery_orders.toLocaleString()}</div>
                         </div>
-
-                        {/* Delivery Orders */}
-                        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                            DELIVERY ORDERS
-                          </div>
-                          <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-                            {store.delivery_orders.toLocaleString()}
-                          </div>
+                        <div className="live-cell" style={cellStyle}>
+                          <div style={labelStyle}>CARRYOUT %</div>
+                          <div style={{ ...valueStyle, color: 'var(--text-primary)' }}>{store.carryout_pct || 'N/A'}</div>
                         </div>
-
-                        {/* Carryout % */}
-                        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                            CARRYOUT %
-                          </div>
-                          <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-                            {store.carryout_pct || 'N/A'}
-                          </div>
-                        </div>
-
-                        {/* Target Food Cost */}
-                        <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px', gridColumn: 'span 2' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                            TARGET FOOD COST
-                          </div>
-                          <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)' }}>
-                            ${store.target_food_cost.toLocaleString()}
-                          </div>
-                        </div>
+                      </div>
+                      <div style={{ marginTop: 10, fontSize: 10, color: 'var(--text-tertiary)', display: 'flex', gap: 16 }}>
+                        <span>Food cost target: <strong style={{ color: 'var(--text-primary)' }}>${store.target_food_cost.toLocaleString()}</strong></span>
+                      </div>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => { e.stopPropagation(); setSelectedStore(store); setShowStoreModal(true); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedStore(store); setShowStoreModal(true); } }}
+                        style={{
+                          fontSize: 10,
+                          color: 'rgba(255,255,255,0.25)',
+                          textAlign: 'center',
+                          paddingTop: 8,
+                          marginTop: 6,
+                          borderTop: '1px solid rgba(255,255,255,0.04)',
+                          cursor: 'pointer',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--brand)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.25)' }}
+                      >
+                        View details →
                       </div>
                     </div>
                   )
@@ -4105,7 +4217,7 @@ export default function DashboardPage() {
             )}
 
             {!liveLoading && liveData.length === 0 && !liveError && (
-              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 40, textAlign: 'center' }}>
+              <div style={{ background: '#0e1018', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: 40, textAlign: 'center' }}>
                 <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>No data available</div>
                 <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", marginBottom: 16 }}>
                   Click &quot;Refresh Now&quot; to reload the latest data from the database (scraper runs every 15 min on Railway)
@@ -4117,7 +4229,7 @@ export default function DashboardPage() {
                     padding: '8px 16px',
                     borderRadius: 8,
                     border: 'none',
-                    background: liveLoading ? 'var(--bg-overlay)' : 'var(--brand)',
+                    background: liveLoading ? '#0e1018' : 'var(--brand)',
                     color: '#fff',
                     fontFamily: "'Inter', sans-serif",
                     fontSize: 13,
@@ -4135,7 +4247,52 @@ export default function DashboardPage() {
         )}
 
         {/* Store Detail Modal */}
-        {showStoreModal && selectedStore && (
+        {showStoreModal && selectedStore && (() => {
+          const modalStoreIdx = parseInt(selectedStore.store_number) % STORE_COLORS.length
+          const modalStoreColor = STORE_COLORS[modalStoreIdx]
+          const modalLaborTarget = LABOR_TARGETS[selectedStore.store_number] ?? 28
+          const parseTimeToMinutes = (timeStr: string | null): number | null => {
+            if (!timeStr) return null
+            const parts = timeStr.split(':')
+            if (parts.length === 2) return (parseFloat(parts[0]) || 0) + ((parseFloat(parts[1]) || 0) / 60)
+            return null
+          }
+          const getValueColor = (item: { colorCode?: boolean; isLabor?: boolean; isTime?: boolean; isMakeTime?: boolean; isPercent?: boolean; value?: unknown }) => {
+            if (item.value == null || item.value === 'N/A' || item.value === '') return 'rgba(255,255,255,0.25)'
+            if (!item.colorCode) return '#fff'
+            if (item.isLabor) return selectedStore.labor_pct < modalLaborTarget ? 'var(--success-text)' : 'var(--danger-text)'
+            if (item.isTime && selectedStore.otd_time) {
+              const m = parseTimeToMinutes(selectedStore.otd_time)
+              if (m == null) return 'rgba(255,255,255,0.25)'
+              if (m <= 20) return 'var(--success-text)'
+              if (m <= 25) return 'var(--warning-text)'
+              return 'var(--danger-text)'
+            }
+            if (item.isMakeTime && selectedStore.avg_make_time) {
+              const m = parseTimeToMinutes(selectedStore.avg_make_time)
+              if (m == null) return 'rgba(255,255,255,0.25)'
+              if (m <= 3) return 'var(--success-text)'
+              if (m <= 4) return 'var(--warning-text)'
+              return 'var(--danger-text)'
+            }
+            if (item.isPercent && item.value != null) {
+              const s = String(item.value)
+              const n = parseFloat(s.replace('%', '').replace('+', '').trim())
+              if (Number.isNaN(n)) return '#fff'
+              return n < 0 ? 'var(--danger-text)' : 'var(--success-text)'
+            }
+            return '#fff'
+          }
+          const cellStyle = {
+            background: '#0e1018',
+            borderRadius: 8,
+            padding: '10px 14px',
+            marginBottom: 6,
+            border: '1px solid rgba(255,255,255,0.05)',
+          }
+          const labelStyle = { fontSize: 10, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 4 }
+          const columnHeaderStyle = { fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.3)', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid rgba(255,255,255,0.06)' }
+          return (
           <div
             style={{
               position: 'fixed',
@@ -4143,7 +4300,7 @@ export default function DashboardPage() {
               left: 0,
               right: 0,
               bottom: 0,
-              background: 'rgba(0, 0, 0, 0.85)',
+              background: 'rgba(0,0,0,0.7)',
               zIndex: 1000,
               display: 'flex',
               alignItems: 'center',
@@ -4154,51 +4311,44 @@ export default function DashboardPage() {
           >
             <div
               style={{
-                background: 'var(--bg-surface)',
+                background: '#13151c',
                 borderRadius: 16,
-                padding: 32,
-                maxWidth: 1200,
-                width: '100%',
-                maxHeight: '90vh',
+                border: '1px solid rgba(255,255,255,0.08)',
+                padding: 28,
+                maxWidth: 900,
+                width: '90vw',
+                maxHeight: '85vh',
                 overflowY: 'auto',
-                border: '1px solid var(--border-subtle)',
                 position: 'relative',
               }}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
                 <div>
-                  <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 24, color: 'var(--text-primary)' }}>
-                    Store {selectedStore.store_number}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: modalStoreColor, display: 'inline-block' }} />
+                    <span style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{selectedStore.store_number} · {STORE_NAMES[selectedStore.store_number] ?? selectedStore.store_number}</span>
                   </div>
-                  <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 4, fontFamily: "'Inter', sans-serif" }}>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 3 }}>
                     {new Date(selectedStore.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowStoreModal(false)}
                   style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 8,
-                    border: '1px solid var(--border-default)',
-                    background: 'var(--bg-overlay)',
-                    color: 'var(--text-secondary)',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: 'none',
+                    borderRadius: 6,
+                    width: 28,
+                    height: 28,
+                    fontSize: 14,
+                    color: 'rgba(255,255,255,0.5)',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: 18,
-                    fontFamily: "'Inter', sans-serif",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'var(--bg-elevated)'
-                    e.currentTarget.style.color = 'var(--text-primary)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'var(--bg-overlay)'
-                    e.currentTarget.style.color = 'var(--text-secondary)'
                   }}
                 >
                   ×
@@ -4206,139 +4356,79 @@ export default function DashboardPage() {
               </div>
 
               {/* Three Columns */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
                 {/* Column 1 — Comp Indicators */}
                 <div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.1em', marginBottom: 16 }}>
-                    COMP INDICATORS
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {[
-                      { label: 'Comp %', value: selectedStore.comp_pct, isPercent: true, colorCode: true },
-                      { label: 'LY Net Sales', value: `$${selectedStore.ly_net_sales?.toLocaleString() || '0'}` },
-                      { label: 'TY Net Sales', value: `$${selectedStore.total_net_sales?.toLocaleString() || '0'}` },
-                      { label: 'Online Comp %', value: selectedStore.online_comp_pct, isPercent: true },
-                      { label: 'Online Net Sales', value: `$${selectedStore.online_net_sales?.toLocaleString() || '0'}` },
-                      { label: 'LY Online Net Sales', value: `$${selectedStore.ly_online_net_sales?.toLocaleString() || '0'}` },
-                    ].map((item) => {
-                      let valueColor = 'var(--text-primary)'
-                      if (item.colorCode && item.value) {
-                        const isNegative = item.value.toString().startsWith('-')
-                        valueColor = isNegative ? 'var(--danger-text)' : 'var(--success-text)'
-                      }
-                      return (
-                        <div key={item.label} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>
-                            {item.label}
-                          </div>
-                          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: valueColor }}>
-                            {item.value || 'N/A'}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+                  <div style={columnHeaderStyle}>COMP INDICATORS</div>
+                  {[
+                    { label: 'Comp %', value: selectedStore.comp_pct, isPercent: true, colorCode: true },
+                    { label: 'LY Net Sales', value: `$${selectedStore.ly_net_sales?.toLocaleString() || '0'}` },
+                    { label: 'TY Net Sales', value: `$${selectedStore.total_net_sales?.toLocaleString() || '0'}` },
+                    { label: 'Online Comp %', value: selectedStore.online_comp_pct, isPercent: true, colorCode: true },
+                    { label: 'Online Net Sales', value: `$${selectedStore.online_net_sales?.toLocaleString() || '0'}` },
+                    { label: 'LY Online Net Sales', value: `$${selectedStore.ly_online_net_sales?.toLocaleString() || '0'}` },
+                  ].map((item) => (
+                    <div key={item.label} style={cellStyle}>
+                      <div style={labelStyle}>{item.label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: getValueColor(item) }}>
+                        {item.value ?? 'N/A'}
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Column 2 — Total Store Indicators */}
                 <div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.1em', marginBottom: 16 }}>
-                    TOTAL STORE INDICATORS
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {[
-                      { label: 'Net Sales +/- %', value: selectedStore.comp_pct, isPercent: true, colorCode: true },
-                      { label: 'Total Net Sales', value: `$${selectedStore.total_net_sales?.toLocaleString() || '0'}` },
-                      { label: 'PSA Sales', value: `$${selectedStore.psa_sales?.toLocaleString() || '0'}` },
-                      { label: 'Total Orders', value: selectedStore.total_orders?.toLocaleString() || '0' },
-                      { label: 'Ticket Average', value: `$${selectedStore.ticket_average?.toLocaleString() || '0'}` },
-                      { label: 'Target Food Cost', value: `$${selectedStore.target_food_cost?.toLocaleString() || '0'}` },
-                      { label: 'Target Food %', value: selectedStore.target_food_pct ? `${selectedStore.target_food_pct}%` : 'N/A' },
-                    ].map((item) => {
-                      let valueColor = 'var(--text-primary)'
-                      if (item.colorCode && item.value) {
-                        const isNegative = item.value.toString().startsWith('-')
-                        valueColor = isNegative ? 'var(--danger-text)' : 'var(--success-text)'
-                      }
-                      return (
-                        <div key={item.label} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>
-                            {item.label}
-                          </div>
-                          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: valueColor }}>
-                            {item.value || 'N/A'}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+                  <div style={columnHeaderStyle}>TOTAL STORE INDICATORS</div>
+                  {[
+                    { label: 'Net Sales +/- %', value: selectedStore.comp_pct, isPercent: true, colorCode: true },
+                    { label: 'Total Net Sales', value: `$${selectedStore.total_net_sales?.toLocaleString() || '0'}` },
+                    { label: 'PSA Sales', value: `$${selectedStore.psa_sales?.toLocaleString() || '0'}` },
+                    { label: 'Total Orders', value: selectedStore.total_orders?.toLocaleString() || '0' },
+                    { label: 'Ticket Average', value: `$${selectedStore.ticket_average?.toLocaleString() || '0'}` },
+                    { label: 'Target Food Cost', value: `$${selectedStore.target_food_cost?.toLocaleString() || '0'}` },
+                    { label: 'Target Food %', value: selectedStore.target_food_pct ? `${selectedStore.target_food_pct}%` : 'N/A' },
+                  ].map((item) => (
+                    <div key={item.label} style={cellStyle}>
+                      <div style={labelStyle}>{item.label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: getValueColor(item) }}>
+                        {item.value ?? 'N/A'}
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Column 3 — Service Indicators */}
                 <div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 600, letterSpacing: '0.1em', marginBottom: 16 }}>
-                    SERVICE INDICATORS
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {[
-                      { label: 'Delivery Orders', value: selectedStore.delivery_orders?.toLocaleString() || '0' },
-                      { label: 'Avg Make Time', value: selectedStore.avg_make_time || 'N/A', colorCode: true, isMakeTime: true },
-                      { label: 'Avg Rack Time', value: selectedStore.avg_rack_time || 'N/A' },
-                      { label: 'OTD Time', value: selectedStore.otd_time || 'N/A', colorCode: true, isTime: true },
-                      { label: 'Carryout %', value: selectedStore.carryout_pct || 'N/A' },
-                      { label: 'Labor Dollars', value: `$${selectedStore.labor_dollars?.toLocaleString() || '0'}` },
-                      { label: 'Labor %', value: `${selectedStore.labor_pct?.toFixed(2) || '0'}%`, colorCode: true, isLabor: true },
-                      { label: 'Orders to Deliver', value: selectedStore.orders_to_deliver?.toLocaleString() || '0' },
-                      { label: 'Product to Make', value: selectedStore.product_to_make?.toLocaleString() || '0' },
-                    ].map((item) => {
-                      let valueColor = 'var(--text-primary)'
-                      if (item.colorCode) {
-                        if (item.isLabor) {
-                          valueColor = selectedStore.labor_pct > 30 ? 'var(--danger-text)' : 'var(--success-text)'
-                        } else if (item.isTime && selectedStore.otd_time) {
-                          const parts = selectedStore.otd_time.split(':')
-                          const otdMinutes = parts.length === 2 
-                            ? (parseFloat(parts[0]) || 0) + ((parseFloat(parts[1]) || 0) / 60)
-                            : null
-                          valueColor = otdMinutes !== null ? (otdMinutes > 18 ? 'var(--danger-text)' : 'var(--success-text)') : 'var(--text-primary)'
-                        } else if (item.isMakeTime && selectedStore.avg_make_time) {
-                          const parts = selectedStore.avg_make_time.split(':')
-                          const makeMinutes = parts.length === 2 
-                            ? (parseFloat(parts[0]) || 0) + ((parseFloat(parts[1]) || 0) / 60)
-                            : null
-                          valueColor = makeMinutes !== null ? (makeMinutes < 4 ? 'var(--success-text)' : 'var(--danger-text)') : 'var(--text-primary)'
-                        }
-                      }
-                      return (
-                        <div key={item.label} style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 4 }}>
-                            {item.label}
-                          </div>
-                          <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: valueColor }}>
-                            {item.value || 'N/A'}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+                  <div style={columnHeaderStyle}>SERVICE INDICATORS</div>
+                  {[
+                    { label: 'Delivery Orders', value: selectedStore.delivery_orders?.toLocaleString() || '0' },
+                    { label: 'Avg Make Time', value: selectedStore.avg_make_time || 'N/A', colorCode: true, isMakeTime: true },
+                    { label: 'Avg Rack Time', value: selectedStore.avg_rack_time || 'N/A' },
+                    { label: 'OTD Time', value: selectedStore.otd_time || 'N/A', colorCode: true, isTime: true },
+                    { label: 'Carryout %', value: selectedStore.carryout_pct || 'N/A' },
+                    { label: 'Labor Dollars', value: `$${selectedStore.labor_dollars?.toLocaleString() || '0'}` },
+                    { label: 'Labor %', value: selectedStore.labor_pct != null ? `${selectedStore.labor_pct.toFixed(2)}%` : 'N/A', colorCode: true, isLabor: true },
+                    { label: 'Orders to Deliver', value: selectedStore.orders_to_deliver?.toLocaleString() || '0' },
+                    { label: 'Product to Make', value: selectedStore.product_to_make?.toLocaleString() || '0' },
+                  ].map((item) => (
+                    <div key={item.label} style={cellStyle}>
+                      <div style={labelStyle}>{item.label}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: getValueColor(item) }}>
+                        {item.value ?? 'N/A'}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* GUEST EXPERIENCE TAB */}
         {!loading && activeTab === 'guest' && (
           <div className="fade-in">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <div>
-                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>Guest Experience</div>
-                <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
-                  SMG Guest Experience scores and case management
-                </div>
-              </div>
-            </div>
-
             <SMGDashboardEmbed />
           </div>
         )}
@@ -4477,7 +4567,7 @@ export default function DashboardPage() {
                               {payload.map((p: any) => (
                                 <div key={p.dataKey} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
                                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
-                                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif" }}>Store {p.dataKey}:</span>
+                                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif" }}>{p.dataKey} · {STORE_NAMES[p.dataKey] ?? p.dataKey}:</span>
                                   <span style={{ fontSize: 12, fontWeight: 600, color: p.color, fontFamily: "'JetBrains Mono', monospace" }}>
                                     {METRICS.find((m) => m.key === trendsMetricKey)?.fmt(p.value) ?? p.value}
                                   </span>
@@ -4487,7 +4577,7 @@ export default function DashboardPage() {
                           )
                         }}
                       />
-                      <Legend wrapperStyle={{ fontSize: 12, fontFamily: "'Inter', sans-serif", color: 'var(--text-secondary)' }} formatter={(val) => `Store ${val}`} />
+                      <Legend wrapperStyle={{ fontSize: 12, fontFamily: "'Inter', sans-serif", color: 'var(--text-secondary)' }} formatter={(val) => `${val} · ${STORE_NAMES[val] ?? val}`} />
                       {trendsStoresSelected.map((storeNum, i) => {
                         const color = STORE_COLORS[stores.findIndex((s) => s.number === storeNum) % STORE_COLORS.length] ?? STORE_COLORS[i % STORE_COLORS.length]
                         return (
@@ -4580,8 +4670,8 @@ export default function DashboardPage() {
                         const store = stores.find((s) => s.number === comp.store_number) || {
                           id: comp.store_number,
                           number: comp.store_number,
-                          name: `Store ${comp.store_number}`,
-                          location: 'Unknown',
+                          name: `${comp.store_number} · ${STORE_NAMES[comp.store_number] ?? comp.store_number}`,
+                          location: STORE_NAMES[comp.store_number] ?? 'Unknown',
                         }
                         const storeIdx = stores.findIndex((s) => s.number === comp.store_number)
                         const storeColor = STORE_COLORS[storeIdx >= 0 ? storeIdx % STORE_COLORS.length : i % STORE_COLORS.length]
@@ -4589,6 +4679,7 @@ export default function DashboardPage() {
                           <div
                             key={comp.store_number}
                             onClick={() => setSelectedYoYStore(comp.store_number)}
+                            title={STORE_NAMES[comp.store_number] ?? comp.store_number}
                             style={{
                               padding: '6px 12px',
                               borderRadius: 6,
@@ -4641,8 +4732,8 @@ export default function DashboardPage() {
                           const store = stores.find((s) => s.number === comp.store_number) || {
                             id: comp.store_number,
                             number: comp.store_number,
-                            name: `Store ${comp.store_number}`,
-                            location: 'Unknown',
+                            name: `${comp.store_number} · ${STORE_NAMES[comp.store_number] ?? comp.store_number}`,
+                            location: STORE_NAMES[comp.store_number] ?? 'Unknown',
                           }
                           const storeIdx = stores.findIndex((s) => s.number === comp.store_number)
                           const storeColor = STORE_COLORS[storeIdx >= 0 ? storeIdx % STORE_COLORS.length : 0]
@@ -4669,8 +4760,31 @@ export default function DashboardPage() {
         {!loading && activeTab === 'dashboard' && (
           <div className="fade-in">
             {/* KPI Summary Row — 6 cells (mockup) */}
+            {/* KPI Summary Row — 6 cells (mockup); skeleton when cube and no data */}
+            {activeTab === 'dashboard' && dataSource === 'cube' && !cubeData?.length && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(6, 1fr)',
+                  gap: 1,
+                  background: 'var(--border-subtle)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  marginBottom: 20,
+                }}
+              >
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <Skeleton height={28} width="60%" style={{ marginBottom: 6 }} />
+                    <Skeleton height={12} width="40%" />
+                  </div>
+                ))}
+              </div>
+            )}
             {kpiSummary && (
               <div
+                className="fade-in"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(6, 1fr)',
@@ -4702,16 +4816,17 @@ export default function DashboardPage() {
                 </div>
                 <div style={{ background: 'var(--bg-surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>Avg Food Cost</div>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: (kpiSummary.avgFoodCostPct ?? 0) <= 23 ? 'var(--success-text)' : (kpiSummary.avgFoodCostPct ?? 0) <= 24.5 ? 'var(--warning-text, #f59e0b)' : 'var(--danger-text)', lineHeight: 1.1 }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 500, color: (() => { const v = kpiSummary.avgFoodCostPct ?? 0; const variance = v - FOOD_COST_IDEAL; return variance <= 0 ? 'var(--success-text)' : variance <= 2 ? 'var(--warning-text, #f59e0b)' : 'var(--danger-text)'; })(), lineHeight: 1.1 }}>
                     {kpiSummary.avgFoodCostPct != null ? `${kpiSummary.avgFoodCostPct.toFixed(1)}%` : '—'}
                   </div>
-                  <div style={{ fontSize: 11, color: kpiSummary.avgFoodCostPct != null ? ((kpiSummary.avgFoodCostPct - 23.0) <= 0 ? 'var(--success-text)' : (kpiSummary.avgFoodCostPct - 23.0) <= 1.5 ? 'var(--warning-text, #f59e0b)' : 'var(--danger-text)') : 'var(--text-tertiary)' }}>
+                  <div style={{ fontSize: 11, color: kpiSummary.avgFoodCostPct != null ? (() => { const variance = (kpiSummary.avgFoodCostPct ?? 0) - FOOD_COST_IDEAL; return variance <= 0 ? 'var(--success-text)' : variance <= 2 ? 'var(--warning-text, #f59e0b)' : 'var(--danger-text)'; })() : 'var(--text-tertiary)' }}>
                     {kpiSummary.avgFoodCostPct != null
-                      ? (kpiSummary.avgFoodCostPct - 23.0) <= 0
-                        ? `↓ ${Math.abs(kpiSummary.avgFoodCostPct - 23.0).toFixed(1)}% below ideal`
-                        : (kpiSummary.avgFoodCostPct - 23.0) <= 1.5
-                          ? `+${(kpiSummary.avgFoodCostPct - 23.0).toFixed(1)}% vs ideal`
-                          : `▲ +${(kpiSummary.avgFoodCostPct - 23.0).toFixed(1)}% above ideal`
+                      ? (() => {
+                          const variance = kpiSummary.avgFoodCostPct - FOOD_COST_IDEAL
+                          if (variance <= 0) return `↓ ${Math.abs(variance).toFixed(1)}% below ideal`
+                          if (variance <= 2) return `▲ +${variance.toFixed(1)}% vs ideal`
+                          return `▲ +${variance.toFixed(1)}% above ideal`
+                        })()
                       : '—'}
                   </div>
                 </div>
@@ -4774,6 +4889,7 @@ export default function DashboardPage() {
                           key={s.number}
                           className={`store-chip ${isSelected ? 'active' : ''}`}
                           onClick={() => toggleStore(s.number)}
+                          title={STORE_NAMES[s.number] ?? s.number}
                           style={{
                             padding: '6px 12px',
                             borderRadius: 6,
@@ -4950,9 +5066,38 @@ export default function DashboardPage() {
 
             </div>
 
-            {/* Store KPI Cards — tighter grid per mockup */}
+            {/* Store KPI Cards — tighter grid per mockup; skeleton when cube and no data */}
             <>
+                {dataSource === 'cube' && !cubeData?.length ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                    {[...Array(6)].map((_, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          background: '#13151c',
+                          border: '1px solid rgba(255,255,255,0.07)',
+                          borderRadius: 12,
+                          padding: 16,
+                          height: 220,
+                        }}
+                      >
+                        <Skeleton height={16} width="50%" style={{ marginBottom: 6 }} />
+                        <Skeleton height={11} width="30%" style={{ marginBottom: 16 }} />
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                          {[...Array(6)].map((_, j) => (
+                            <div key={j} style={{ background: '#0e1018', borderRadius: 7, padding: '10px 12px' }}>
+                              <Skeleton height={9} width="60%" style={{ marginBottom: 8 }} />
+                              <Skeleton height={18} width="80%" style={{ marginBottom: 4 }} />
+                              <Skeleton height={10} width="50%" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                 <div
+                  className="fade-in"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(3, 1fr)',
@@ -4988,6 +5133,7 @@ export default function DashboardPage() {
                     )
                   })}
                 </div>
+                )}
 
                 {/* Single Store Date Compare */}
                 {selectedStoresSafe.length === 1 && (
@@ -5066,19 +5212,42 @@ export default function DashboardPage() {
                     .filter((x) => x.laborPct != null)
                     .sort((a, b) => (a.laborPct ?? 0) - (b.laborPct ?? 0))
                   const laborMax = Math.max(...laborRows.map((r) => r.laborPct ?? 0), 1)
-                  const idealFood = TARGETS.food_cost_pct ?? 26.42
                   const fcRows = selectedStoresSafe
                     .map((num) => {
                       const s = stores.find((x) => x.number === num)
                       const r = cubeData?.find((x) => String(x.storeNumber) === num)
                       const actual = r?.actualFoodPct ?? (r?.netSales && r?.foodCostUsd ? (r.foodCostUsd / r.netSales) * 100 : null)
-                      const gap = actual != null ? actual - idealFood : null
-                      return { storeNum: num, location: s?.location ?? s?.name ?? num, actual, gap }
+                      const gap = actual != null ? actual - FOOD_COST_IDEAL : null
+                      return { storeNum: num, location: STORE_NAMES[num] ?? s?.location ?? s?.name ?? num, actual, gap }
                     })
                     .filter((x) => x.actual != null)
                     .sort((a, b) => (b.gap ?? 0) - (a.gap ?? 0))
+                  if (!cubeData?.length) {
+                    return (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr', gap: 12, marginTop: 16 }}>
+                        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 20 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <Skeleton height={14} width="40%" />
+                            <Skeleton height={160} borderRadius={8} />
+                          </div>
+                        </div>
+                        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 20 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <Skeleton height={14} width="40%" />
+                            <Skeleton height={160} borderRadius={8} />
+                          </div>
+                        </div>
+                        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 20 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <Skeleton height={14} width="40%" />
+                            <Skeleton height={160} borderRadius={8} />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
                   return (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr', gap: 12, marginTop: 16 }}>
+                    <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1fr', gap: 12, marginTop: 16 }}>
                       <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: 16, minHeight: 220 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-tertiary)', marginBottom: 14 }}>📊 {trendChartTitle}</div>
                         {trendLoading ? (
@@ -5183,16 +5352,20 @@ export default function DashboardPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {fcRows.map((row) => (
+                            {fcRows.map((row) => {
+                              const gap = row.gap ?? 0
+                              const gapColor = gap <= 0 ? 'var(--success-text)' : gap <= 2 ? 'var(--warning-text, #f59e0b)' : 'var(--danger-text)'
+                              return (
                               <tr key={row.storeNum}>
                                 <td style={{ padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', color: 'var(--text-primary)', fontWeight: 500 }}>{row.location}</td>
                                 <td style={{ padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--text-secondary)' }}>{row.actual != null ? `${row.actual.toFixed(1)}%` : '—'}</td>
-                                <td style={{ padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--text-secondary)' }}>{idealFood}%</td>
-                                <td style={{ padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: 600, color: (row.gap ?? 0) > 3 ? 'var(--danger-text)' : (row.gap ?? 0) > 1.5 ? 'var(--warning-text, #f59e0b)' : 'var(--success-text)' }}>
+                                <td style={{ padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: 'var(--text-secondary)' }}>{FOOD_COST_IDEAL}%</td>
+                                <td style={{ padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: 600, color: gapColor }}>
                                   {row.gap != null ? `${row.gap >= 0 ? '+' : ''}${row.gap.toFixed(1)}%` : '—'}
                                 </td>
                               </tr>
-                            ))}
+                              )
+                            })}
                           </tbody>
                         </table>
                       </div>

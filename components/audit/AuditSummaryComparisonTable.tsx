@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Lock } from 'lucide-react'
 
 interface AuditSummaryComparisonTableProps {
   period: string
@@ -92,7 +93,25 @@ export default function AuditSummaryComparisonTable({ period, refreshKey }: Audi
       {loading ? (
         <div style={{ padding: 24 }}>Loading…</div>
       ) : data.length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>No comparison data — sync first</div>
+        <div style={{ padding: 40, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <Lock size={20} style={{ color: 'var(--text-tertiary)' }} strokeWidth={2} />
+          <button
+            type="button"
+            style={{
+              padding: '6px 14px',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              background: 'var(--bg-overlay)',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-tertiary)',
+              cursor: 'pointer',
+            }}
+          >
+            Coming soon
+          </button>
+        </div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>

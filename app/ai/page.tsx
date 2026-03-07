@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
+import NavBar from '@/components/NavBar'
 
 const CAPABILITIES = [
   [
@@ -145,7 +145,28 @@ function MarqueeRow({
         {doubled.map((item, i) => (
           <div
             key={i}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 whitespace-nowrap text-sm text-gray-300"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 14px',
+              borderRadius: 20,
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-subtle)',
+              fontSize: 12,
+              color: 'var(--text-tertiary)',
+              whiteSpace: 'nowrap',
+              cursor: 'default',
+              transition: 'border-color 0.2s, color 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'var(--brand)'
+              e.currentTarget.style.color = 'var(--text-primary)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--border-subtle)'
+              e.currentTarget.style.color = 'var(--text-tertiary)'
+            }}
           >
             <span>{item.icon}</span>
             <span>{item.text}</span>
@@ -158,32 +179,10 @@ function MarqueeRow({
 
 export default function AIPage() {
   const [notified, setNotified] = useState(false)
-  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null)
 
   return (
     <div style={{ background: 'var(--bg-base, #0a0b0f)', minHeight: '100vh', color: 'var(--text-primary, #f1f3f9)' }}>
-      {/* Shared app header — same as Audit */}
-      <div style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)', padding: '0 32px' }}>
-        <div style={{ maxWidth: 1400, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: '#fff' }}>PJ</div>
-            <div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 16, color: 'var(--text-primary)' }}>Papa Johns Ops</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>AI — Operations Intelligence</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 4, background: 'var(--bg-overlay)', borderRadius: 8, padding: 4, border: '1px solid var(--border-subtle)' }}>
-            <Link href="/dashboard" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Dashboard</Link>
-            <Link href="/trends" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Trends</Link>
-            <Link href="/analytics/profitability" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Analytics</Link>
-            <Link href="/audit" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Audit</Link>
-            <span style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'var(--brand)', color: '#fff' }}>✨ AI</span>
-            <Link href="/dashboard" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Live</Link>
-            <Link href="/dashboard" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, background: 'transparent', color: 'var(--text-tertiary)', textDecoration: 'none' }}>Guest Experience</Link>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }} />
-        </div>
-      </div>
+      <NavBar />
 
       {/* Ambient glow */}
       <div className="fixed inset-0 pointer-events-none">
@@ -192,67 +191,193 @@ export default function AIPage() {
       </div>
 
       {/* Coming Soon content — inside app layout */}
-      <div className="relative" style={{ maxWidth: 1400, margin: '0 auto', padding: 24 }}>
+      <div className="relative" style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 28px' }}>
         <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 text-xs font-medium mb-6">
-            <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 16px',
+              borderRadius: 20,
+              background: 'linear-gradient(135deg, rgba(232,68,26,0.15), rgba(232,68,26,0.05))',
+              border: '1px solid rgba(232,68,26,0.3)',
+              color: 'var(--brand)',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              marginBottom: 24,
+            }}
+          >
+            <span className="ai-badge-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--brand)', flexShrink: 0 }} />
             COMING SOON — BETA ACCESS
           </div>
-          <h1 className="text-4xl font-bold tracking-tight mb-3">✨ Operations Intelligence</h1>
-          <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+          <h1
+            style={{
+              fontSize: 'clamp(28px, 4vw, 42px)',
+              fontWeight: 800,
+              marginBottom: 12,
+              color: 'var(--text-primary)',
+            }}
+          >
+            <span style={{ color: 'var(--brand)' }}>✦</span> Operations Intelligence
+          </h1>
+          <p
+            style={{
+              fontSize: 14,
+              color: 'var(--text-tertiary)',
+              maxWidth: 520,
+              margin: '0 auto',
+              lineHeight: 1.7,
+              textAlign: 'center',
+            }}
+          >
             AI-powered analysis across every dimension of your business. Fraud detection, financial
             leakage, customer patterns, competitor intelligence — all in one place.
           </p>
         </div>
 
-        <div className="mb-12 rounded-xl border border-white/5 bg-white/[0.02] overflow-hidden py-4">
+        <div
+          style={{
+            marginBottom: 48,
+            borderRadius: 12,
+            border: '1px solid var(--border-subtle)',
+            background: 'var(--bg-surface)',
+            overflow: 'hidden',
+            padding: '16px 0',
+            maskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+            WebkitMaskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+          }}
+        >
           <MarqueeRow items={CAPABILITIES[0]} direction="left" />
           <MarqueeRow items={CAPABILITIES[1]} direction="right" />
         </div>
 
         <div className="mb-12">
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-6 text-center">
+          <h2
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              color: 'var(--text-tertiary)',
+              textTransform: 'uppercase',
+              textAlign: 'center',
+              marginBottom: 24,
+            }}
+          >
             What you&apos;ll be able to analyze
           </h2>
+
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(232,68,26,0.08), rgba(232,68,26,0.03))',
+            border: '1px solid rgba(232,68,26,0.2)',
+            borderRadius: 12, padding: '16px 20px', marginBottom: 24,
+            display: 'flex', alignItems: 'center', gap: 16
+          }}>
+            <div style={{ fontSize: 28 }}>🔔</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700,
+                color: 'var(--text-primary)', marginBottom: 3 }}>
+                Smart Alerts — Automated Notifications
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)',
+                lineHeight: 1.5 }}>
+                Get SMS and email alerts when labor exceeds target,
+                food cost spikes, EBITDA goes negative, or sales drop
+                below forecast. Set thresholds per store.
+              </div>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div style={{
+                fontSize: 10, fontWeight: 700, padding: '3px 10px',
+                borderRadius: 5, background: 'rgba(232,68,26,0.1)',
+                color: 'var(--brand)', border: '1px solid rgba(232,68,26,0.2)',
+                letterSpacing: '0.06em', marginBottom: 8
+              }}>COMING SOON</div>
+              <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                SMS · Email · Slack
+              </div>
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {CATEGORIES.map((category) => (
               <div
                 key={category.id}
-                onMouseEnter={() => setHoveredCategory(category.id)}
-                onMouseLeave={() => setHoveredCategory(null)}
-                className={`relative rounded-xl border ${category.border} bg-gradient-to-br ${category.color} p-5 transition-all duration-300 ${
-                  hoveredCategory === category.id ? 'scale-[1.02]' : ''
-                }`}
+                style={{
+                  position: 'relative',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 12,
+                  padding: 20,
+                  transition: 'transform 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'scale(1.02)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'none'
+                }}
               >
                 {category.badge && (
-                  <span className="absolute top-3 right-3 text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 font-medium">
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 12,
+                      right: 12,
+                      fontSize: 10,
+                      padding: '2px 8px',
+                      borderRadius: 20,
+                      background: 'rgba(234,179,8,0.2)',
+                      border: '1px solid rgba(234,179,8,0.3)',
+                      color: 'var(--text-tertiary)',
+                      fontWeight: 600,
+                    }}
+                  >
                     ProfitKeeper
                   </span>
                 )}
-                <div className="absolute inset-0 rounded-xl backdrop-blur-[1px] bg-black/20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-200 z-10">
-                  <div className="text-center">
-                    <div className="text-3xl mb-1">🔒</div>
-                    <div className="text-xs text-gray-400">Available after launch</div>
-                  </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginBottom: 16,
+                    paddingBottom: 12,
+                    borderBottom: '1px solid var(--border-subtle)',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>{category.icon}</span>
+                  {category.label}
                 </div>
 
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-xl">{category.icon}</span>
-                  <h3 className="font-semibold text-white">{category.label}</h3>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: 10,
+                  }}
+                >
                   {category.buttons.map((btn, i) => (
                     <div
                       key={i}
-                      className="p-2.5 rounded-lg bg-black/30 border border-white/5"
+                      style={{
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        borderRadius: 8,
+                        padding: '10px 12px',
+                      }}
                     >
-                      <div className="text-lg mb-1">{btn.icon}</div>
-                      <div className="text-xs font-medium text-white leading-tight">
+                      <div style={{ fontSize: 16, marginBottom: 6 }}>{btn.icon}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
                         {btn.label}
                       </div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">{btn.sub}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        {btn.sub}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -266,7 +391,7 @@ export default function AIPage() {
             { value: '25+', label: 'Analysis Types', icon: '🔍' },
             { value: '6', label: 'Data Sources', icon: '📊' },
             { value: '<2s', label: 'Response Time', icon: '⚡' },
-            { value: '~$0', label: 'Cost Per Query', icon: '💰' },
+            { value: 'Private', label: 'Your Data Only', icon: '🔒' },
           ].map((stat, i) => (
             <div
               key={i}
@@ -279,30 +404,37 @@ export default function AIPage() {
           ))}
         </div>
 
-        <div className="text-center p-8 rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 to-transparent">
-          <h3 className="text-xl font-semibold mb-2">
-            Ready to unlock Operations Intelligence?
-          </h3>
-          <p className="text-gray-400 text-sm mb-6">
-            All 25+ analysis types, connected to your live Supabase data,
-            <br />
-            powered by Claude AI. Launching with the next phase.
-          </p>
+        <div style={{ textAlign: 'center', marginTop: 40, paddingTop: 32, borderTop: '1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 12 }}>
+            Be the first to know when AI features launch
+          </div>
           <button
             type="button"
             onClick={() => setNotified(true)}
-            className={`px-8 py-3 rounded-lg font-medium transition-all ${
-              notified
-                ? 'bg-green-500/20 border border-green-500/30 text-green-400'
-                : 'bg-orange-500 hover:bg-orange-400 text-white'
-            }`}
+            style={{
+              padding: '8px 24px',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              background: 'var(--brand)',
+              color: '#fff',
+              border: 'none',
+              cursor: 'pointer',
+            }}
           >
-            {notified ? "✅ You'll be notified at launch" : '🔔 Notify me when available'}
+            ✦ Request Early Access
           </button>
         </div>
       </div>
 
       <style jsx global>{`
+        @keyframes ai-badge-pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.6; transform: scale(1.2); }
+        }
+        .ai-badge-dot {
+          animation: ai-badge-pulse 1.5s ease-in-out infinite;
+        }
         @keyframes marquee-left {
           0% {
             transform: translateX(0);

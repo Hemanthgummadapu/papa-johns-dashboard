@@ -57,9 +57,11 @@ interface AuditUploadProps {
   /** Page-selected period; when provided, upload uses this so "Last Year" tab + upload sends timePeriod=last_year */
   selectedTimePeriod?: TimePeriod
   onUploadComplete?: () => void
+  /** When true, do not render outer card or title (parent provides them) */
+  embedded?: boolean
 }
 
-export default function AuditUpload({ selectedTimePeriod, onUploadComplete }: AuditUploadProps) {
+export default function AuditUpload({ selectedTimePeriod, onUploadComplete, embedded }: AuditUploadProps) {
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('current_period')
   const timePeriodForUpload = selectedTimePeriod ?? timePeriod
   useEffect(() => {
@@ -136,18 +138,20 @@ export default function AuditUpload({ selectedTimePeriod, onUploadComplete }: Au
 
   return (
     <div
-      style={{
+      style={embedded ? undefined : {
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-subtle)',
         borderRadius: 12,
         padding: 20,
       }}
     >
-      <h3 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: 'var(--text-primary)', marginBottom: 4 }}>
-        Upload Tableau Data
-      </h3>
+      {!embedded && (
+        <h3 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: 'var(--text-primary)', marginBottom: 4 }}>
+          Upload Tableau Data
+        </h3>
+      )}
 
-      <div style={{ marginTop: 16 }}>
+      <div style={{ marginTop: embedded ? 0 : 16 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           Time Period
         </div>
@@ -158,11 +162,11 @@ export default function AuditUpload({ selectedTimePeriod, onUploadComplete }: Au
               type="button"
               onClick={() => setTimePeriod(p)}
               style={{
-                padding: '8px 14px',
-                borderRadius: 8,
-                border: '1px solid var(--border-default)',
-                background: timePeriodForUpload === p ? 'var(--brand)' : 'var(--bg-overlay)',
-                color: timePeriodForUpload === p ? '#fff' : 'var(--text-primary)',
+                padding: '4px 10px',
+                borderRadius: 5,
+                border: timePeriodForUpload === p ? 'none' : '1px solid var(--border-subtle)',
+                background: timePeriodForUpload === p ? 'var(--brand)' : 'transparent',
+                color: timePeriodForUpload === p ? '#fff' : 'var(--text-tertiary)',
                 fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -182,12 +186,15 @@ export default function AuditUpload({ selectedTimePeriod, onUploadComplete }: Au
       <div
         style={{
           marginTop: 16,
-          border: `2px dashed ${dragOver ? 'var(--brand)' : 'var(--border-subtle)'}`,
-          borderRadius: 12,
-          padding: 24,
+          border: '2px dashed var(--border-subtle)',
+          borderRadius: 8,
+          padding: 32,
           textAlign: 'center',
-          background: dragOver ? 'var(--bg-overlay)' : 'var(--bg-base)',
+          color: 'var(--text-tertiary)',
+          fontSize: 13,
+          background: dragOver ? 'var(--bg-overlay)' : 'transparent',
           cursor: 'pointer',
+          borderColor: dragOver ? 'var(--brand)' : undefined,
         }}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
@@ -203,10 +210,10 @@ export default function AuditUpload({ selectedTimePeriod, onUploadComplete }: Au
           onChange={(e) => addFiles(e.target.files)}
         />
         <span style={{ fontSize: 32 }}>📂</span>
-        <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+        <p style={{ margin: '8px 0 0', color: 'inherit' }}>
           Drop CSV files here or click to browse
         </p>
-        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-tertiary)' }}>
+        <p style={{ margin: '4px 0 0', fontSize: 11, opacity: 0.8 }}>
           (select up to 8 files)
         </p>
       </div>
@@ -243,11 +250,11 @@ export default function AuditUpload({ selectedTimePeriod, onUploadComplete }: Au
                   onChange={(e) => setSelectedView(entry.id, e.target.value)}
                   disabled={entry.status === 'uploading'}
                   style={{
-                    fontSize: 11,
-                    padding: '4px 8px',
-                    background: 'var(--bg-surface)',
-                    border: '1px solid var(--border-default)',
+                    fontSize: 12,
+                    padding: '4px 10px',
                     borderRadius: 6,
+                    background: 'var(--bg-overlay)',
+                    border: '1px solid var(--border-subtle)',
                     color: 'var(--text-primary)',
                     minWidth: 160,
                   }}

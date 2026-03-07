@@ -48,6 +48,20 @@ interface SMGScore {
 
 const STORE_COLORS = ['#e8410a', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#06b6d4']
 
+const STORE_NAMES: Record<string, string> = {
+  '2021': 'Tapo',
+  '2081': 'Chatsworth',
+  '2259': 'Canoga Park',
+  '2292': 'Westhills',
+  '2481': 'Madera',
+  '3011': 'Northridge',
+}
+
+function normalizeStoreId(storeId: string): string {
+  const n = parseInt(storeId.replace(/^0+/, ''), 10)
+  return Number.isNaN(n) ? storeId : String(n)
+}
+
 export default function SMGDashboardEmbed() {
   const [data, setData] = useState<SMGScore[]>([])
   const [lastScraped, setLastScraped] = useState<string | null>(null)
@@ -146,6 +160,20 @@ export default function SMGDashboardEmbed() {
     return `${value.toFixed(1)}%`
   }
 
+  // Get top bar color for card based on OSAT
+  const getTopBarColorByOSAT = (osat: number | null) => {
+    if (osat === null) return 'var(--border-subtle)'
+    if (osat >= 80) return '#22c55e'
+    if (osat >= 65) return '#f59e0b'
+    return '#ef4444'
+  }
+
+  // Get value color for metric vs threshold (PJ avg)
+  const getMetricValueColor = (value: number | null, threshold: number) => {
+    if (value === null) return 'rgba(255,255,255,0.25)'
+    return value > threshold ? '#22c55e' : '#ef4444'
+  }
+
   // Get border color for card based on OSAT comparison
   const getBorderColor = (storeOSAT: number | null, pjOSAT: number | null) => {
     if (storeOSAT === null || pjOSAT === null) return 'var(--border-subtle)'
@@ -219,95 +247,77 @@ export default function SMGDashboardEmbed() {
 
   return (
     <div style={{ position: 'relative' }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-        {lastScraped && (
-          <div
+      {/* Slim header row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>Guest Experience</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>SMG Guest Experience scores and case management</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {lastScraped && (
+            <div
+              style={{
+                padding: '4px 10px',
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 600,
+                background: isStale ? 'rgba(239,68,26,0.1)' : 'rgba(34,197,94,0.1)',
+                border: isStale ? '1px solid rgba(239,68,26,0.2)' : '1px solid rgba(34,197,94,0.3)',
+                color: isStale ? '#ef4444' : '#22c55e',
+              }}
+            >
+              {isStale ? `⚠ Stale · last scraped ${hoursAgo} hours ago` : '● LIVE'}
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            Last scraped: {lastScraped ? new Date(lastScraped).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never'}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            Next scrape: {formatCountdownDisplay(countdownSeconds) || '—'}
+          </div>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing}
             style={{
-              padding: '4px 12px',
+              padding: '5px 12px',
               borderRadius: 6,
               fontSize: 12,
               fontWeight: 600,
-              fontFamily: "'Inter', sans-serif",
-              color: isStale ? 'var(--danger-text)' : 'var(--success-text)',
-              background: isStale ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)',
-              border: `1px solid ${isStale ? 'var(--danger-text)' : 'var(--success-text)'}`,
+              background: '#e8410a',
+              color: '#fff',
+              border: 'none',
+              cursor: refreshing ? 'not-allowed' : 'pointer',
+              opacity: refreshing ? 0.7 : 1,
             }}
           >
-            {isStale ? `⚠ STALE — last scraped ${hoursAgo} hours ago` : '● LIVE'}
-          </div>
-        )}
-        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
-          Last scraped:{' '}
-          {lastScraped
-            ? new Date(lastScraped).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-              })
-            : 'Never'}
+            {refreshing ? 'Refreshing...' : '↻ Refresh'}
+          </button>
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif" }}>
-          Next scrape:{' '}
-          <span style={{ color: 'var(--text-secondary)', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-            {formatCountdownDisplay(countdownSeconds) || '—'}
-          </span>
-        </div>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          style={{
-            height: 32,
-            padding: '0 12px',
-            borderRadius: 8,
-            border: '1px solid var(--border-default)',
-            background: 'var(--bg-overlay)',
-            color: 'var(--text-secondary)',
-            cursor: refreshing ? 'not-allowed' : 'pointer',
-            opacity: refreshing ? 0.6 : 1,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            fontSize: 12,
-            fontFamily: "'Inter', sans-serif",
-            fontWeight: 600,
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={(e) => {
-            if (!refreshing) {
-              e.currentTarget.style.background = 'var(--bg-elevated)'
-              e.currentTarget.style.color = 'var(--text-primary)'
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!refreshing) {
-              e.currentTarget.style.background = 'var(--bg-overlay)'
-              e.currentTarget.style.color = 'var(--text-secondary)'
-            }
-          }}
-        >
-          {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
-        </button>
       </div>
       {/* GRID VIEW */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))',
+          gridTemplateColumns: 'repeat(3, 1fr)',
           gap: 16,
           opacity: showStoreModal ? 0.3 : 1,
           transition: 'opacity 0.2s',
         }}
       >
         {data.map((store, idx) => {
+          const storeKey = normalizeStoreId(store.store_id)
           const storeColor = STORE_COLORS[idx % STORE_COLORS.length]
-          const borderColor = getBorderColor(store.ranking_store_osat, store.ranking_pj_osat)
+          const displayName = `${storeKey} · ${STORE_NAMES[storeKey] ?? storeKey}`
+          const topBarColor = getTopBarColorByOSAT(store.ranking_store_osat)
           const osatBadge = getComparisonBadge(store.ranking_store_osat, store.ranking_pj_osat)
           const accuracyBadge = getComparisonBadge(store.ranking_store_accuracy_of_order, store.ranking_pj_accuracy_of_order)
           const waitTimeBadge = getComparisonBadge(store.ranking_store_wait_time, store.ranking_pj_wait_time)
           const tasteBadge = getComparisonBadge(store.ranking_store_taste_of_food, store.ranking_pj_taste_of_food)
+          const osatColor = getMetricValueColor(store.ranking_store_osat, 65)
+          const accuracyColor = getMetricValueColor(store.ranking_store_accuracy_of_order, 72)
+          const waitTimeColor = getMetricValueColor(store.ranking_store_wait_time, 65)
+          const tasteColor = getMetricValueColor(store.ranking_store_taste_of_food, 62)
 
           return (
             <div
@@ -317,10 +327,10 @@ export default function SMGDashboardEmbed() {
                 setShowStoreModal(true)
               }}
               style={{
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border-subtle)',
+                background: '#13151c',
+                border: '1px solid rgba(255,255,255,0.07)',
                 borderRadius: 12,
-                padding: 20,
+                padding: 16,
                 position: 'relative',
                 overflow: 'hidden',
                 cursor: 'pointer',
@@ -334,7 +344,7 @@ export default function SMGDashboardEmbed() {
               }}
               onMouseLeave={(e) => {
                 if (!showStoreModal) {
-                  e.currentTarget.style.borderColor = 'var(--border-subtle)'
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'
                   e.currentTarget.style.transform = 'none'
                 }
               }}
@@ -346,86 +356,75 @@ export default function SMGDashboardEmbed() {
                   left: 0,
                   right: 0,
                   height: 3,
-                  background: borderColor,
+                  background: topBarColor,
+                  borderRadius: '12px 12px 0 0',
                 }}
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 0 }}>
                 <div>
-                  <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>
-                    Store {store.store_id}
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {displayName}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
                     {store.scraped_at ? new Date(store.scraped_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'}
                   </div>
                 </div>
                 <div
                   style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 6,
-                    background: 'var(--bg-overlay)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 11,
-                    fontFamily: "'JetBrains Mono', monospace",
+                    padding: '2px 8px',
+                    borderRadius: 5,
+                    background: storeColor + '22',
+                    border: '1px solid ' + storeColor + '44',
+                    fontSize: 12,
+                    fontWeight: 700,
                     color: storeColor,
-                    fontWeight: 500,
                   }}
                 >
-                  {store.store_id.slice(-2)}
+                  {storeKey}
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 14 }}>
                 {/* OSAT */}
-                <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                    OSAT
-                  </div>
-                  <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 4 }}>
+                <div style={{ background: '#0e1018', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 7, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>OSAT</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: osatColor }}>
                     {formatNumber(store.ranking_store_osat)}
                   </div>
-                  <div style={{ fontSize: 11, color: osatBadge.color, fontFamily: "'Inter', sans-serif" }}>
+                  <div style={{ fontSize: 11, marginTop: 3, color: osatBadge.color }}>
                     {osatBadge.text} vs PJ
                   </div>
                 </div>
 
                 {/* Accuracy */}
-                <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                    ACCURACY
-                  </div>
-                  <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 4 }}>
+                <div style={{ background: '#0e1018', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 7, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>ACCURACY</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: accuracyColor }}>
                     {formatNumber(store.ranking_store_accuracy_of_order)}
                   </div>
-                  <div style={{ fontSize: 11, color: accuracyBadge.color, fontFamily: "'Inter', sans-serif" }}>
+                  <div style={{ fontSize: 11, marginTop: 3, color: accuracyBadge.color }}>
                     {accuracyBadge.text} vs PJ
                   </div>
                 </div>
 
                 {/* Wait Time */}
-                <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                    WAIT TIME
-                  </div>
-                  <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 4 }}>
+                <div style={{ background: '#0e1018', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 7, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>WAIT TIME</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: waitTimeColor }}>
                     {formatNumber(store.ranking_store_wait_time)}
                   </div>
-                  <div style={{ fontSize: 11, color: waitTimeBadge.color, fontFamily: "'Inter', sans-serif" }}>
+                  <div style={{ fontSize: 11, marginTop: 3, color: waitTimeBadge.color }}>
                     {waitTimeBadge.text} vs PJ
                   </div>
                 </div>
 
                 {/* Taste of Food */}
-                <div style={{ background: 'var(--bg-base)', borderRadius: 8, padding: '12px' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 500, letterSpacing: '0.08em', marginBottom: 8 }}>
-                    TASTE
-                  </div>
-                  <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-primary)', marginBottom: 4 }}>
+                <div style={{ background: '#0e1018', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 7, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>TASTE</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: tasteColor }}>
                     {formatNumber(store.ranking_store_taste_of_food)}
                   </div>
-                  <div style={{ fontSize: 11, color: tasteBadge.color, fontFamily: "'Inter', sans-serif" }}>
+                  <div style={{ fontSize: 11, marginTop: 3, color: tasteBadge.color }}>
                     {tasteBadge.text} vs PJ
                   </div>
                 </div>
@@ -491,7 +490,7 @@ export default function SMGDashboardEmbed() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <div>
                 <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 24, color: 'var(--text-primary)' }}>
-                  Store {selectedStoreData.store_id}
+                  {(() => { const k = normalizeStoreId(selectedStoreData.store_id); return `${k} · ${STORE_NAMES[k] ?? k}`; })()}
                 </div>
                 <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 4, fontFamily: "'Inter', sans-serif" }}>
                   Last scraped: {selectedStoreData.scraped_at ? new Date(selectedStoreData.scraped_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never'}
@@ -688,7 +687,7 @@ export default function SMGDashboardEmbed() {
                   {/* Store row */}
                   <tr>
                     <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '14px 12px' }}>
-                      Store {selectedStoreData.store_id}
+                      {(() => { const k = normalizeStoreId(selectedStoreData.store_id); return `${k} · ${STORE_NAMES[k] ?? k}`; })()}
                     </td>
                     <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_responses ?? 0) >= (selectedStoreData.ranking_pj_responses ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
                       {selectedStoreData.ranking_store_responses ?? '—'}
