@@ -485,6 +485,9 @@ export async function scrapeSMG(
         );
       }, { timeout: 15000 }).catch(() => { /* timeout ok, continue */ });
 
+      // Hard 30s wait for all widgets to load - mirrors proven local script
+      await page.waitForTimeout(30000);
+
       // Scrape immediately (nulls are valid)
       // Extract data - ONLY ranking table and "How are we doing?" table
       const parsed = await page.evaluate(({ storeId, storeNum }) => {
