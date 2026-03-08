@@ -11,6 +11,13 @@ async function keepAlive() {
   }
 
   const browser = await chromium.launch({ headless: true });
+  // Validate session file before using
+  try { JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8')); } catch(e) {
+    console.log('⚠️ Corrupted session file, deleting...');
+    fs.unlinkSync(SESSION_FILE);
+    await browser.close();
+    process.exit(1);
+  }
   const context = await browser.newContext({ storageState: SESSION_FILE });
   const page = await context.newPage();
 
