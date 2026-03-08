@@ -12,7 +12,7 @@ const SMG_SESSION_PATH = '/tmp/smg-session.json'
 
 function mapToSmgScoresRow(d: SMGStoreData): Record<string, unknown> {
   return {
-    store_id: d.store_number,
+    store_id: d.store_number ? d.store_number.padStart(6, '0') : d.store_number,
     period: 'current',
     scraped_at: d.scraped_at,
     ranking_store_responses: d.responses,
