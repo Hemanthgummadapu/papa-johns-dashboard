@@ -80,19 +80,21 @@ export default function SMGComments({ comments: initialComments = [] }: SMGComme
     return Object.fromEntries(sortedEntries)
   }, [filtered])
 
-  // Get border color based on category
+  // Get border color based on category (use app success/danger colors)
   const getBorderColor = (category: string | null) => {
     if (!category) return '#8E8E93'
-    if (category.toLowerCase().includes('compliment')) return '#34C759'
-    if (category.toLowerCase().includes('complaint')) return '#FF3B30'
+    const c = category.toLowerCase()
+    if (c.includes('why highly satisfied') || c.includes('compliment')) return '#22c55e'
+    if (c.includes('why not highly satisfied') || c.includes('complaint')) return '#ef4444'
     return '#8E8E93'
   }
 
-  // Get badge background color
+  // Get badge background color (green/red to match app metrics, white text)
   const getBadgeColor = (category: string | null) => {
     if (!category) return '#666'
-    if (category.toLowerCase().includes('compliment')) return '#34C759'
-    if (category.toLowerCase().includes('complaint')) return '#FF3B30'
+    const c = category.toLowerCase()
+    if (c.includes('why highly satisfied') || c.includes('compliment')) return '#22c55e'
+    if (c.includes('why not highly satisfied') || c.includes('complaint')) return '#ef4444'
     return '#666'
   }
 
@@ -114,7 +116,7 @@ export default function SMGComments({ comments: initialComments = [] }: SMGComme
       zIndex: 1, // Ensure it's below modal (modal is z-index 9999)
       pointerEvents: 'auto' // Ensure it's interactive
     }}>
-      {/* Section Title */}
+      {/* Section Title — match Guest Experience / Live Store Data (20px, 700) */}
       <div style={{ 
         fontFamily: "'Inter', sans-serif", 
         fontWeight: 700, 

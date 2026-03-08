@@ -2899,6 +2899,7 @@ export default function DashboardPage() {
                   key={tab.key}
                   type="button"
                   onClick={() => setOpsTab(tab.key)}
+                  className={opsTab === tab.key ? '' : 'hover:text-gray-300'}
                   style={{
                     padding: '10px 18px',
                     fontSize: 13,
@@ -2971,11 +2972,11 @@ export default function DashboardPage() {
                       fontFamily: "'Inter', sans-serif",
                     }}
                   >
-                    <div>
+                    <div className="border-r border-gray-700 pr-8">
                       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Total scheduled</div>
                       <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>{fmtHr(totalSchedWeek)}h</div>
                     </div>
-                    <div>
+                    <div className="border-r border-gray-700 pr-8">
                       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Total actual</div>
                       <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>{fmtHr(totalActualWeek)}h</div>
                     </div>
@@ -3031,8 +3032,6 @@ export default function DashboardPage() {
                     {storeOrder.map((storeNum) => {
                       const current = weekRows.find((r) => r.store_number === storeNum)
                       if (!current) return null
-                      const storeIdx = parseInt(storeNum, 10) % STORE_COLORS.length
-                      const storeColor = STORE_COLORS[storeIdx]
                       const vInstore = variance(current.instore_scheduled_hours, current.instore_actual_hours)
                       const vManager = variance(current.manager_scheduled_hours, current.manager_actual_hours)
                       const vDriver = variance(current.driver_scheduled_hours, current.driver_actual_hours)
@@ -3051,13 +3050,12 @@ export default function DashboardPage() {
                         }))
                         .filter((d) => d.scheduled !== 0 || d.actual !== 0)
                       const showTrend = laborTrendStore === storeNum
-                      const targetPct = LABOR_TARGETS[storeNum] ?? 28
                       const laborPct = laborPctByStore[storeNum]
                       return (
                         <div
                           key={storeNum}
                           style={{
-                            background: 'var(--bg-card, #1a1d27)',
+                            background: 'var(--bg-surface)',
                             border: '1px solid var(--border-subtle)',
                             borderRadius: 10,
                             padding: 16,
@@ -3072,22 +3070,40 @@ export default function DashboardPage() {
                               <button
                                 type="button"
                                 onClick={() => setLaborTrendStore(showTrend ? null : storeNum)}
-                                style={{
-                                  padding: '4px 10px',
-                                  borderRadius: 5,
-                                  border: '1px solid var(--border-subtle)',
-                                  background: showTrend ? 'var(--bg-overlay)' : 'transparent',
-                                  color: 'var(--text-tertiary)',
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  fontFamily: "'Inter', sans-serif",
-                                  cursor: 'pointer',
-                                }}
+                                className="text-xs text-gray-400 cursor-pointer hover:underline"
                               >
                                 {showTrend ? 'Hide Trend' : 'Show Trend'}
                               </button>
-                              <div style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: storeColor, fontWeight: 600 }}>
-                                {storeNum.slice(-2)}
+                            </div>
+                          </div>
+                          {/* Mini summary bar — same grid as rows below for column alignment */}
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '80px 1fr 1fr 60px',
+                              gap: '0 8px',
+                              alignItems: 'center',
+                              borderBottom: '1px solid rgb(55 65 81)',
+                              paddingBottom: 12,
+                              marginBottom: 12,
+                            }}
+                          >
+                            <div />
+                            <div className="border-r border-gray-700">
+                              <div className="text-xs text-gray-500 uppercase" style={{ textAlign: 'left' }}>Scheduled</div>
+                              <div className="text-sm font-semibold text-white" style={{ fontFamily: "'JetBrains Mono', monospace", textAlign: 'left' }}>{fmtHr(totalSched)}h</div>
+                            </div>
+                            <div className="border-r border-gray-700">
+                              <div className="text-xs text-gray-500 uppercase" style={{ textAlign: 'center' }}>Actual</div>
+                              <div className="text-sm font-semibold text-white" style={{ fontFamily: "'JetBrains Mono', monospace", textAlign: 'center' }}>{fmtHr(totalActual)}h</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-gray-500 uppercase" style={{ textAlign: 'right' }}>Variance</div>
+                              <div
+                                className={`text-sm font-semibold ${vTotal != null ? (vTotal < 0 ? 'text-red-400' : vTotal > 0 ? 'text-green-400' : 'text-white') : 'text-white'}`}
+                                style={{ fontFamily: "'JetBrains Mono', monospace", textAlign: 'right' }}
+                              >
+                                {vTotal != null ? (vTotal >= 0 ? `+${fmtHr(vTotal)}` : fmtHr(vTotal)) : '—'}h
                               </div>
                             </div>
                           </div>
@@ -3099,20 +3115,20 @@ export default function DashboardPage() {
                             ].map(({ label, sched, actual, v }) => (
                               <Fragment key={label}>
                                 <div style={{ padding: '5px 0', borderTop: '1px solid var(--border-subtle)' }}>
-                                  <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: 'var(--bg-overlay)', color: 'var(--text-secondary)' }}>{label}</span>
+                                  <span className="text-gray-400">{label}</span>
                                 </div>
                                 <div style={{ padding: '5px 0', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>{fmtHr(sched)}h</div>
-                                <div style={{ padding: '5px 0', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>{fmtHr(actual)}h</div>
+                                <div style={{ padding: '5px 0', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-primary)', textAlign: 'center' }}>{fmtHr(actual)}h</div>
                                 <div style={{ padding: '5px 0', borderTop: '1px solid var(--border-subtle)', fontWeight: 600, color: v != null ? (v < 0 ? '#ef4444' : v > 0 ? '#22c55e' : 'var(--text-primary)') : 'var(--text-primary)' }}>
                                   {v != null ? (v >= 0 ? `+${fmtHr(v)}` : fmtHr(v)) : '—'}h
                                 </div>
                               </Fragment>
                             ))}
                           </div>
-                          <div style={{ marginTop: 4, paddingTop: 8, borderTop: '2px solid var(--border-subtle)', display: 'grid', gridTemplateColumns: '80px 1fr 1fr 60px', gap: '0 8px', alignItems: 'center', fontSize: 13, fontWeight: 700, fontFamily: "'Inter', sans-serif'" }}>
+                          <div className="border-t border-gray-700 mt-2 pt-2" style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr 60px', gap: '0 8px', alignItems: 'center', fontSize: 13, fontWeight: 700, fontFamily: "'Inter', sans-serif'" }}>
                             <div>TOTAL</div>
                             <div style={{ color: 'var(--text-primary)' }}>{fmtHr(totalSched)}h</div>
-                            <div style={{ color: 'var(--text-primary)' }}>{fmtHr(totalActual)}h</div>
+                            <div style={{ color: 'var(--text-primary)', textAlign: 'center' }}>{fmtHr(totalActual)}h</div>
                             <div style={{ color: vTotal != null ? (vTotal < 0 ? '#ef4444' : vTotal > 0 ? '#22c55e' : 'var(--text-primary)') : 'var(--text-primary)' }}>
                               {vTotal != null ? (vTotal >= 0 ? `+${fmtHr(vTotal)}` : fmtHr(vTotal)) : '—'}h
                             </div>
@@ -3123,11 +3139,12 @@ export default function DashboardPage() {
                               <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>—</span>
                             ) : (
                               <span
+                                className={laborPct != null ? (laborPct >= 30 ? 'text-red-400' : 'text-green-400') : ''}
                                 style={{
-                                  fontSize: 16,
+                                  fontSize: 13,
                                   fontWeight: 700,
                                   fontFamily: "'JetBrains Mono', monospace",
-                                  color: laborPct != null ? (laborPct > targetPct ? '#ef4444' : '#22c55e') : 'var(--text-primary)',
+                                  ...(laborPct == null ? { color: 'var(--text-primary)' } : {}),
                                 }}
                               >
                                 {laborPct != null ? `${laborPct}%` : '—'}
@@ -3503,9 +3520,6 @@ export default function DashboardPage() {
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{r.storeNum} · {STORE_NAMES[r.storeNum] ?? r.storeNum}</span>
-                              <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: storeColor, fontWeight: 500 }}>
-                                {r.storeNum.slice(-2)}
-                              </span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <button
@@ -3969,7 +3983,7 @@ export default function DashboardPage() {
               }}
             >
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Live Store Data</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>Live Store Data</div>
                 <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Real-time KPI · Papa Johns extranet</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -4193,28 +4207,33 @@ export default function DashboardPage() {
                           <div style={{ ...valueStyle, color: 'var(--text-primary)' }}>{store.carryout_pct || 'N/A'}</div>
                         </div>
                       </div>
-                      <div style={{ marginTop: 10, fontSize: 10, color: 'var(--text-tertiary)', display: 'flex', gap: 16 }}>
-                        <span>Food cost target: <strong style={{ color: 'var(--text-primary)' }}>${store.target_food_cost.toLocaleString()}</strong></span>
+                      <div style={{ marginTop: 10, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>FOOD COST TARGET</div>
+                        <div style={{ ...valueStyle, color: 'var(--text-primary)' }}>${store.target_food_cost.toLocaleString()}</div>
                       </div>
-                      <div
-                        role="button"
-                        tabIndex={0}
+                      <button
+                        type="button"
                         onClick={(e) => { e.stopPropagation(); setSelectedStore(store); setShowStoreModal(true); }}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedStore(store); setShowStoreModal(true); } }}
                         style={{
-                          fontSize: 10,
-                          color: 'rgba(255,255,255,0.25)',
-                          textAlign: 'center',
-                          paddingTop: 8,
-                          marginTop: 6,
-                          borderTop: '1px solid rgba(255,255,255,0.04)',
+                          fontSize: 11,
+                          fontFamily: "'Inter', sans-serif",
+                          fontWeight: 600,
+                          color: 'var(--text-tertiary)',
+                          background: 'transparent',
+                          border: '1px solid var(--border-default)',
+                          borderRadius: 5,
+                          padding: '3px 9px',
                           cursor: 'pointer',
+                          width: '100%',
+                          marginTop: 6,
+                          paddingTop: 8,
+                          borderTop: '1px solid rgba(255,255,255,0.04)',
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--brand)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.25)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--brand)'; e.currentTarget.style.borderColor = 'var(--brand)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.borderColor = 'var(--border-default)' }}
                       >
-                        View details →
-                      </div>
+                        View →
+                      </button>
                     </div>
                   )
                 })}

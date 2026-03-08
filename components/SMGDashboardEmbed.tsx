@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Lock } from 'lucide-react'
 import SMGComments from './SMGComments'
 
 interface SMGScore {
@@ -64,13 +65,6 @@ function normalizeStoreId(storeId: string): string {
 
 const LockIcon = () => (
   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 4, flexShrink: 0 }}>
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-  </svg>
-)
-
-const LockIconSmall = ({ size = 14, color = 'rgba(255,255,255,0.2)' }: { size?: number; color?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
   </svg>
@@ -271,7 +265,7 @@ export default function SMGDashboardEmbed() {
       {/* Slim header row */}
       <div className="guest-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>Guest Experience</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>Guest Experience</div>
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>SMG Guest Experience scores and case management</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -351,7 +345,7 @@ export default function SMGDashboardEmbed() {
               style={{
                 background: '#13151c',
                 border: '1px solid rgba(255,255,255,0.07)',
-                borderRadius: '12px 12px 8px 8px',
+                borderRadius: 12,
                 padding: 16,
                 position: 'relative',
                 overflow: 'hidden',
@@ -464,65 +458,34 @@ export default function SMGDashboardEmbed() {
               </div>
               </div>
 
-              {/* Section 2 — Case Intelligence Row */}
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, textAlign: 'center' }}>
+              {/* Section 2 — Case Intelligence Row (only when data is available) */}
+              {store.ranking_store_responses != null && (
+              <div className="border-t border-gray-700 pt-3 grid gap-3 text-center" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
                 <div>
                   <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>CASES</div>
-                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 18 }}>
-                    <LockIconSmall size={14} color="rgba(255,255,255,0.2)" />
+                  <div className="flex justify-center items-center min-h-[18px]">
+                    <Lock size={14} className="text-gray-500 flex-shrink-0" />
                   </div>
                 </div>
                 <div>
                   <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>AVG RESOLVE</div>
-                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 18 }}>
-                    <LockIconSmall size={14} color="rgba(255,255,255,0.2)" />
+                  <div className="flex justify-center items-center min-h-[18px]">
+                    <Lock size={14} className="text-gray-500 flex-shrink-0" />
                   </div>
                 </div>
                 <div>
                   <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>ESCALATED</div>
-                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 18 }}>
-                    <LockIconSmall size={14} color="rgba(255,255,255,0.2)" />
+                  <div className="flex justify-center items-center min-h-[18px]">
+                    <Lock size={14} className="text-gray-500 flex-shrink-0" />
                   </div>
                 </div>
               </div>
+              )}
 
-              {/* Section 3 — Locked feature pills */}
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
-                <span style={{ background: 'rgba(255,165,0,0.08)', border: '1px solid rgba(255,165,0,0.2)', borderRadius: 20, padding: '4px 10px', fontSize: 10, color: 'rgba(255,165,0,0.6)', display: 'inline-flex', alignItems: 'center' }}>
-                  🔒 Auto-Escalation
-                </span>
-                <span style={{ background: 'rgba(255,165,0,0.08)', border: '1px solid rgba(255,165,0,0.2)', borderRadius: 20, padding: '4px 10px', fontSize: 10, color: 'rgba(255,165,0,0.6)', display: 'inline-flex', alignItems: 'center' }}>
-                  🔒 GM Alerts
-                </span>
-                <span style={{ background: 'rgba(255,165,0,0.08)', border: '1px solid rgba(255,165,0,0.2)', borderRadius: 20, padding: '4px 10px', fontSize: 10, color: 'rgba(255,165,0,0.6)', display: 'inline-flex', alignItems: 'center' }}>
-                  🔒 Resolution Tracking
-                </span>
-              </div>
-
-              {/* Section 4 — Alert notification bar */}
-              <div
-                style={{
-                  marginTop: 12,
-                  marginLeft: -16,
-                  marginRight: -16,
-                  marginBottom: -16,
-                  padding: '8px 14px',
-                  background: 'rgba(255,255,255,0.03)',
-                  borderTop: '1px solid rgba(255,255,255,0.06)',
-                  borderRadius: '0 0 8px 8px',
-                  display: 'flex',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                  <EnvelopeIcon color="rgba(255,255,255,0.4)" size={14} />
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Alert sent to GM</span>
-                  <span style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', fontSize: 9, fontWeight: 600, borderRadius: 4, padding: '2px 6px', letterSpacing: '0.08em', border: '1px solid rgba(255,255,255,0.1)' }}>COMING SOON</span>
-                </div>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>
-                  {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              {/* Section 3 — Single coming-soon badge */}
+              <div className="flex flex-wrap justify-start pt-3">
+                <span className="inline-block rounded-full border border-gray-700 px-3 py-1 text-xs text-gray-500 select-none">
+                  🔒 Case Management — Coming Soon
                 </span>
               </div>
             </div>
@@ -530,15 +493,26 @@ export default function SMGDashboardEmbed() {
         })}
       </div>
 
+      {/* Single subtle coming soon indicator — pill/badge at bottom center */}
+      <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', display: 'flex', justifyContent: 'center' }}>
+        <span style={{
+          display: 'inline-block',
+          background: 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 20,
+          padding: '6px 14px',
+          fontSize: 10,
+          fontWeight: 600,
+          color: 'rgba(255,255,255,0.4)',
+          letterSpacing: '0.05em',
+        }}>
+          Alerts & notifications — Coming soon
+        </span>
+      </div>
+
       {/* Comments section - hidden when modal is open */}
       {!showStoreModal && (
         <div style={{ marginTop: 40 }}>
-          <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 20, marginBottom: 8, color: 'var(--text-primary)' }}>
-            What Are People Saying?
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', fontFamily: "'Inter', sans-serif", fontWeight: 400, marginBottom: 24 }}>
-            Recent customer comments from SMG
-          </div>
           <SMGComments comments={[]} />
         </div>
       )}
@@ -546,86 +520,47 @@ export default function SMGDashboardEmbed() {
       {/* MODAL VIEW */}
       {showStoreModal && selectedStoreData && (
         <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'transparent',
-            zIndex: 99999,
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            padding: '40px 20px',
-            overflow: 'hidden',
-            pointerEvents: 'none',
-          }}
+          className="fixed inset-0 z-[99999] flex items-start justify-center overflow-hidden p-6 pt-14"
+          style={{ background: 'transparent', pointerEvents: 'none' }}
           onClick={() => setShowStoreModal(false)}
         >
           <div
+            className="flex max-h-[80vh] w-full max-w-[860px] flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] shadow-2xl"
             style={{
               background: 'var(--bg-surface)',
-              borderRadius: 16,
-              padding: 32,
-              maxWidth: 860,
-              width: '100%',
-              height: 'calc(100vh - 80px)',
-              overflowY: 'auto',
-              overflowX: 'hidden',
-              position: 'relative',
-              marginTop: '40px',
-              border: '1px solid var(--border-subtle)',
               fontFamily: "'Inter', sans-serif",
-              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
               pointerEvents: 'auto',
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+            {/* Header — fixed at top, does not scroll */}
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-8 py-5">
               <div>
-                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 24, color: 'var(--text-primary)' }}>
+                <div className="text-2xl font-bold text-[var(--text-primary)]">
                   {(() => { const k = normalizeStoreId(selectedStoreData.store_id); return `${k} · ${STORE_NAMES[k] ?? k}`; })()}
                 </div>
-                <div style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 4, fontFamily: "'Inter', sans-serif" }}>
+                <div className="mt-1 text-sm text-[var(--text-tertiary)]">
                   Last scraped: {selectedStoreData.scraped_at ? new Date(selectedStoreData.scraped_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never'}
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowStoreModal(false)}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  border: '1px solid var(--border-default)',
-                  background: 'var(--bg-overlay)',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 18,
-                  fontFamily: "'Inter', sans-serif",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--bg-elevated)'
-                  e.currentTarget.style.color = 'var(--text-primary)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--bg-overlay)'
-                  e.currentTarget.style.color = 'var(--text-secondary)'
-                }}
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--border-default)] bg-[var(--bg-overlay)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                style={{ fontSize: 18 }}
               >
                 ×
               </button>
             </div>
 
+            {/* Scrollable body */}
+            <div className="guest-modal-scroll flex-1 overflow-y-auto overflow-x-hidden px-8 pb-8 pt-6">
+
             {/* SECTION 1 — WHERE SHOULD I FOCUS? */}
-            <div style={{ marginTop: 28 }}>
+            <div style={{ marginTop: 40 }}>
               <div style={{ 
                 color: 'var(--text-primary)', 
-                fontSize: 16, 
+                fontSize: 18, 
                 fontWeight: 600, 
                 fontFamily: "'Inter', sans-serif",
                 borderBottom: '2px solid var(--border-subtle)',
@@ -637,18 +572,18 @@ export default function SMGDashboardEmbed() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', fontWeight: 400, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>METRIC</th>
-                    <th style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 400, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>CURRENT</th>
-                    <th style={{ textAlign: 'right', fontSize: 14, color: 'var(--text-primary)', fontWeight: 400, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>VS PREVIOUS</th>
+                    <th className="text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>METRIC</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>CURRENT</th>
+                    <th className="text-right text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>VS PREVIOUS</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>Accuracy of Order</td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', padding: '18px 0', borderBottom: '1px solid var(--border-subtle)' }}>Accuracy of Order</td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '18px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                       {formatNumber(selectedStoreData.focus_accuracy_current)}%
                     </td>
-                    <td style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <td style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, padding: '18px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                       {(() => {
                         const diff = selectedStoreData.focus_accuracy_vs_previous
                         if (diff === null || diff === undefined) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
@@ -662,11 +597,11 @@ export default function SMGDashboardEmbed() {
                     </td>
                   </tr>
                   <tr>
-                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>Wait Time</td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', padding: '18px 0', borderBottom: '1px solid var(--border-subtle)' }}>Wait Time</td>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '18px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                       {formatNumber(selectedStoreData.focus_wait_time_current)}%
                     </td>
-                    <td style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <td style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, padding: '18px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                       {(() => {
                         const diff = selectedStoreData.focus_wait_time_vs_previous
                         if (diff === null || diff === undefined) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>
@@ -684,10 +619,10 @@ export default function SMGDashboardEmbed() {
             </div>
 
             {/* SECTION 2 — HOW ARE WE DOING? */}
-            <div style={{ marginTop: 28 }}>
+            <div style={{ marginTop: 40 }}>
               <div style={{ 
                 color: 'var(--text-primary)', 
-                fontSize: 16, 
+                fontSize: 18, 
                 fontWeight: 600, 
                 fontFamily: "'Inter', sans-serif",
                 borderBottom: '2px solid var(--border-subtle)',
@@ -699,11 +634,11 @@ export default function SMGDashboardEmbed() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>METRIC</th>
-                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>MY SCORE</th>
-                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>VS LAST PERIOD</th>
-                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>PAPA JOHN'S</th>
-                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>VS PJ</th>
+                    <th className="text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>METRIC</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>MY SCORE</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>VS LAST PERIOD</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>PAPA JOHN'S</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>VS PJ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -719,12 +654,12 @@ export default function SMGDashboardEmbed() {
                     const vsLastDiff = item.vsLast !== null ? item.vsLast : null
                     const vsPjDiff = (item.my ?? 0) - (item.pj ?? 0)
                     return (
-                      <tr key={item.key} style={{ background: idx % 2 === 0 ? 'transparent' : 'var(--bg-base)' }}>
-                        <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', padding: '14px 0' }}>{item.label}</td>
-                        <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '14px 0' }}>
+                      <tr key={item.key} className="py-3" style={{ background: idx % 2 === 0 ? 'transparent' : 'var(--bg-base)' }}>
+                        <td className="py-3" style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)' }}>{item.label}</td>
+                        <td className="py-3" style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700 }}>
                           {formatNumber(item.my)}%
                         </td>
-                        <td style={{ textAlign: 'center', fontSize: 14, fontWeight: 500, padding: '14px 0' }}>
+                        <td className="py-3" style={{ textAlign: 'center', fontSize: 14, fontWeight: 500 }}>
                           {vsLastDiff === null ? (
                             <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                           ) : vsLastDiff > 0 ? (
@@ -733,10 +668,10 @@ export default function SMGDashboardEmbed() {
                             <span style={{ color: 'var(--danger-text)' }}>↓ {vsLastDiff.toFixed(1)}</span>
                           )}
                         </td>
-                        <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 0' }}>
+                        <td className="py-3" style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700 }}>
                           {formatNumber(item.pj)}%
                         </td>
-                        <td style={{ textAlign: 'center', fontSize: 14, fontWeight: 500, padding: '14px 0' }}>
+                        <td className="py-3" style={{ textAlign: 'center', fontSize: 14, fontWeight: 500 }}>
                           {vsPjDiff === 0 && (item.my === null || item.pj === null) ? (
                             <span style={{ color: 'var(--text-tertiary)' }}>—</span>
                           ) : vsPjDiff > 0 ? (
@@ -755,81 +690,84 @@ export default function SMGDashboardEmbed() {
             </div>
 
             {/* SECTION 3 — RANKING */}
-            <div style={{ marginTop: 28 }}>
-              <div style={{ 
-                color: 'var(--text-primary)', 
-                fontSize: 16, 
-                fontWeight: 600, 
-                fontFamily: "'Inter', sans-serif",
-                borderBottom: '2px solid var(--border-subtle)',
-                paddingBottom: 8,
-                marginBottom: 16
-              }}>
+            <div className="mt-6">
+              <div
+                className="mb-3"
+                style={{ 
+                  color: 'var(--text-primary)', 
+                  fontSize: 18, 
+                  fontWeight: 600, 
+                  fontFamily: "'Inter', sans-serif",
+                  borderBottom: '2px solid var(--border-subtle)',
+                  paddingBottom: 8
+                }}
+              >
                 RANKING
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>STORE</th>
-                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>RESP</th>
-                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>OSAT</th>
-                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>TASTE</th>
-                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>ACCURACY</th>
-                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>WAIT TIME</th>
-                    <th style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 500, letterSpacing: '0.8px', textTransform: 'uppercase', padding: '14px 12px', borderBottom: '1px solid var(--border-subtle)' }}>FRIENDLINESS</th>
+                    <th className="text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 12px', borderBottom: '1px solid var(--border-subtle)' }}>STORE</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 12px', borderBottom: '1px solid var(--border-subtle)' }}>RESP</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 12px', borderBottom: '1px solid var(--border-subtle)' }}>OSAT</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 12px', borderBottom: '1px solid var(--border-subtle)' }}>TASTE</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 12px', borderBottom: '1px solid var(--border-subtle)' }}>ACCURACY</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 12px', borderBottom: '1px solid var(--border-subtle)' }}>WAIT TIME</th>
+                    <th className="text-center text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)]" style={{ padding: '12px 12px', borderBottom: '1px solid var(--border-subtle)' }}>FRIENDLINESS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {/* Store row */}
                   <tr>
-                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, padding: '18px 12px' }}>
                       {(() => { const k = normalizeStoreId(selectedStoreData.store_id); return `${k} · ${STORE_NAMES[k] ?? k}`; })()}
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_responses ?? 0) >= (selectedStoreData.ranking_pj_responses ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_responses ?? 0) >= (selectedStoreData.ranking_pj_responses ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {selectedStoreData.ranking_store_responses ?? '—'}
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_osat ?? 0) >= (selectedStoreData.ranking_pj_osat ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_osat ?? 0) >= (selectedStoreData.ranking_pj_osat ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {formatNumber(selectedStoreData.ranking_store_osat)}%
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_taste_of_food ?? 0) >= (selectedStoreData.ranking_pj_taste_of_food ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_taste_of_food ?? 0) >= (selectedStoreData.ranking_pj_taste_of_food ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {formatNumber(selectedStoreData.ranking_store_taste_of_food)}%
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_accuracy_of_order ?? 0) >= (selectedStoreData.ranking_pj_accuracy_of_order ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_accuracy_of_order ?? 0) >= (selectedStoreData.ranking_pj_accuracy_of_order ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {formatNumber(selectedStoreData.ranking_store_accuracy_of_order)}%
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_wait_time ?? 0) >= (selectedStoreData.ranking_pj_wait_time ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_wait_time ?? 0) >= (selectedStoreData.ranking_pj_wait_time ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {formatNumber(selectedStoreData.ranking_store_wait_time)}%
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_friendliness ?? 0) >= (selectedStoreData.ranking_pj_friendliness ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: (selectedStoreData.ranking_store_friendliness ?? 0) >= (selectedStoreData.ranking_pj_friendliness ?? 0) ? 'var(--success-text)' : 'var(--danger-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {formatNumber(selectedStoreData.ranking_store_friendliness)}%
                     </td>
                   </tr>
                   {/* Papa John's row */}
                   <tr style={{ background: 'var(--bg-base)' }}>
-                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'left', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '18px 12px' }}>
                       Papa John's
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {selectedStoreData.ranking_pj_responses ?? '—'}
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {formatNumber(selectedStoreData.ranking_pj_osat)}%
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {formatNumber(selectedStoreData.ranking_pj_taste_of_food)}%
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {formatNumber(selectedStoreData.ranking_pj_accuracy_of_order)}%
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {formatNumber(selectedStoreData.ranking_pj_wait_time)}%
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '14px 12px' }}>
+                    <td style={{ textAlign: 'center', fontSize: 14, color: 'var(--info-text)', fontWeight: 700, padding: '18px 12px' }}>
                       {formatNumber(selectedStoreData.ranking_pj_friendliness)}%
                     </td>
                   </tr>
                 </tbody>
               </table>
+            </div>
             </div>
           </div>
         </div>
