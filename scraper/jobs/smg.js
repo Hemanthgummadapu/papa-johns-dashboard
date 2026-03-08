@@ -2,7 +2,7 @@ const { execSync } = require('child_process');
 const path = require('path');
 
 async function run() {
-  const root = path.join(__dirname, '../../');
+  const root = path.join(__dirname, '../');
   const npx = 'npx';
 
   try {
