@@ -1,10 +1,14 @@
+import { chromium } from 'playwright'
+import { writeFileSync, readFileSync, mkdirSync } from 'fs'
 import { getSupabaseAdminClient } from '@/lib/db'
-import { getSMGAuthenticatedPage, loadSMGSessionFromSupabase } from '@/lib/smg-browser'
 import { scrapeSMG } from '@/lib/smg-scraper'
 import type { SMGStoreData } from '@/types/smg'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
+
+const EXTRANET_SESSION_PATH = '/tmp/extranet-session.json'
+const SMG_SESSION_PATH = '/tmp/smg-session.json'
 
 function mapToSmgScoresRow(d: SMGStoreData): Record<string, unknown> {
   return {
@@ -40,26 +44,90 @@ export async function GET(request: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null
+
   try {
-    await loadSMGSessionFromSupabase()
-    const { browser, page } = await getSMGAuthenticatedPage()
+    // 1. Load extranet session from Supabase into /tmp/extranet-session.json
+    const supabase = getSupabaseAdminClient()
+    const { data: extranetRow } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'extranet_session_state')
+      .single()
+
+    if (!extranetRow?.value) {
+      return Response.json(
+        { success: false, error: 'Extranet session not found in settings (key: extranet_session_state)' },
+        { status: 500 }
+      )
+    }
+
+    mkdirSync('/tmp', { recursive: true })
+    writeFileSync(EXTRANET_SESSION_PATH, extranetRow.value)
+
+    // 2. Launch Playwright
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    })
+
+    // 3. Create context with extranet storage state
+    const context = await browser.newContext({ storageState: EXTRANET_SESSION_PATH })
+    const page = await context.newPage()
+
     try {
+      // 4. Navigate to extranet gateway
+      await page.goto('https://extranet.papajohns.com/GatewayMenu/#/GATEWAY', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000,
+      })
+      await page.waitForTimeout(3000)
+
+      // 5. Find and click PIE - Powered by SMG link via evaluate
+      await page.evaluate(() => {
+        const links = Array.from(document.querySelectorAll('a'))
+        const pieSmg = links.find(
+          (a) => a.textContent?.includes('PIE') && a.textContent?.includes('SMG')
+        )
+        if (!pieSmg) throw new Error('PIE - SMG link not found')
+        ;(pieSmg as HTMLElement).click()
+      })
+
+      // 6. Wait for SMG redirect
+      await page.waitForURL('**/reporting.smg.com/**', { timeout: 60000 })
+      await page.waitForTimeout(3000)
+
+      // 7. Run scrape with the same page (already on SMG)
       const { data } = await scrapeSMG(page, 'current')
-      const supabase = getSupabaseAdminClient()
+
+      // 8. Save results to smg_scores
       for (const row of data) {
         await supabase.from('smg_scores').upsert(mapToSmgScoresRow(row), {
           onConflict: 'store_id,period',
         })
       }
-      await browser.close()
+
+      // 9. Save fresh SMG context to file then to Supabase (key: smg_session_state)
+      await context.storageState({ path: SMG_SESSION_PATH })
+      const smgSessionJson = readFileSync(SMG_SESSION_PATH, 'utf-8')
+      await supabase
+        .from('settings')
+        .upsert(
+          {
+            key: 'smg_session_state',
+            value: smgSessionJson,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' }
+        )
+
       return Response.json({
         success: true,
         stores: data.length,
         message: 'SMG scrape completed successfully',
       })
-    } catch (err) {
-      await browser.close()
-      throw err
+    } finally {
+      await context.close()
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
@@ -67,5 +135,7 @@ export async function GET(request: Request) {
       { success: false, error: message },
       { status: 500 }
     )
+  } finally {
+    if (browser) await browser.close()
   }
 }

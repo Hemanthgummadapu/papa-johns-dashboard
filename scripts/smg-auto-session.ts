@@ -6,7 +6,7 @@ import * as dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
 
-const EXTRANET_SESSION_FILE = path.join(process.cwd(), 'scripts', 'session.json');
+const EXTRANET_SESSION_FILE = path.join(process.cwd(), 'extranet-session.json');
 const SMG_SESSION_FILE = path.join(process.cwd(), 'smg-session.json');
 
 async function refreshSMGSession() {
