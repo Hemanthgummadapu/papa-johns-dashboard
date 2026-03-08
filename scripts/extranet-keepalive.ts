@@ -29,6 +29,23 @@ async function keepAlive() {
 
     await context.storageState({ path: SESSION_FILE });
     console.log(`✅ Extranet session alive and refreshed at ${new Date().toISOString()}`);
+    // Push fresh session to Supabase for Railway
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const dotenv = await import('dotenv');
+      dotenv.config({ path: '.env.local' });
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+      const session = fs.readFileSync(SESSION_FILE, 'utf-8');
+      await supabase.from('settings')
+        .update({ value: session, updated_at: new Date().toISOString() })
+        .eq('key', 'extranet_session_sta;
+      console.log('✅ Extranet session pushed to Supabase');
+    } catch (e) {
+      console.error('⚠️ Failed to push session to Supabase:', e);
+    }
   } catch (err) {
     console.error('❌ Keepalive failed:', err);
     process.exit(1);
