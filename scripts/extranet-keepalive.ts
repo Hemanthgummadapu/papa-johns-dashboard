@@ -41,7 +41,7 @@ async function keepAlive() {
       const session = fs.readFileSync(SESSION_FILE, 'utf-8');
       await supabase.from('settings')
         .update({ value: session, updated_at: new Date().toISOString() })
-        .eq('key', 'extranet_session_sta;
+        .eq('key', 'extranet_session_state');
       console.log('✅ Extranet session pushed to Supabase');
     } catch (e) {
       console.error('⚠️ Failed to push session to Supabase:', e);
@@ -54,3 +54,5 @@ async function keepAlive() {
   }
 }
 
+
+keepAlive().catch(console.error);
