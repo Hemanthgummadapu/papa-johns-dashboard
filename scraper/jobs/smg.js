@@ -1,24 +1,38 @@
+const { execSync } = require('child_process');
+const path = require('path');
+
 async function run() {
+  const root = path.join(__dirname, '../../');
+  const npx = 'npx';
+
   try {
-    const baseUrl = process.env.NEXTJS_URL || 'http://localhost:3000';
-    const apiKey = process.env.SCRAPER_API_KEY;
-    const res = await fetch(`${baseUrl}/api/cron-smg`, {
-      method: 'GET',
-      headers: apiKey ? { 'x-api-key': apiKey } : {},
+    console.log(`[${new Date().toISOString()}] Starting SMG session refresh...`);
+    execSync(`${npx} tsx scripts/smg-auto-session.ts`, {
+      cwd: root,
+      stdio: 'inherit',
+      timeout: 120000
     });
-    const data = await res.json().catch(() => ({}));
-    console.log(`[${new Date().toISOString()}] smg result:`, JSON.stringify(data));
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    // Also scrape comments
-    const commentsRes = await fetch(`${baseUrl}/api/cron-smg-comments`, {
-      method: 'GET',
-      headers: apiKey ? { 'x-api-key': apiKey } : {},
+    console.log(`[${new Date().toISOString()}] SMG session refreshed`);
+
+    console.log(`[${new Date().toISOString()}] Starting SMG scrape...`);
+    execSync(`node scripts/test-smg-one-store.js`, {
+      cwd: root,
+      stdio: 'inherit',
+      timeout: 600000
     });
-    const commentsData = await commentsRes.json().catch(() => ({}));
-    console.log(`[${new Date().toISOString()}] smg-comments result:`, JSON.stringify(commentsData));
-    return { success: true, data, comments: commentsData };
+    console.log(`[${new Date().toISOString()}] SMG scrape complete`);
+
+    console.log(`[${new Date().toISOString()}] Starting SMG comments scrape...`);
+    execSync(`${npx} tsx scripts/smg-scrape-comments.ts`, {
+      cwd: root,
+      stdio: 'inherit',
+      timeout: 120000
+    });
+    console.log(`[${new Date().toISOString()}] SMG comments complete`);
+
+    return { success: true };
   } catch (err) {
-    console.error(`[${new Date().toISOString()}] smg FAILED:`, err.message);
+    console.error(`[${new Date().toISOString()}] SMG job failed:`, err.message);
     throw err;
   }
 }
